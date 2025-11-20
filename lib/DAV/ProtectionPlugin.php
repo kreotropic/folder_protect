@@ -33,6 +33,7 @@ use OCA\FolderProtection\ProtectionChecker;
 use Sabre\DAV\Exception\Forbidden;
 use Sabre\DAV\Server;
 use Sabre\DAV\ServerPlugin;
+use Sabre\DAV\Exception\Locked;
 use Sabre\DAV\INode;
 use Psr\Log\LoggerInterface;
 
@@ -79,7 +80,7 @@ class ProtectionPlugin extends ServerPlugin {
         if (in_array($method, ['GET','PROPFIND','COPY'])) {
             if ($this->protectionChecker->isProtectedOrParentProtected($path)) {
                 $this->logger->warning("FolderProtection DAV: Blocking $method on protected path: $path");
-                throw new Forbidden('Cannot read or copy protected folders');
+                throw new Locked('Cannot read or copy protected folders');
             }
         }
 
@@ -88,7 +89,7 @@ class ProtectionPlugin extends ServerPlugin {
             if ($this->protectionChecker->isProtectedOrParentProtected($path) ||
                 $this->protectionChecker->isAnyProtectedWithBasename(basename($path))) {
                 $this->logger->warning("FolderProtection DAV: Blocking MKCOL (create dir) on protected/forbidden path: $path");
-                throw new Forbidden('Cannot create directories in or with the name of protected folders');
+                throw new Locked('Cannot create directories in or with the name of protected folders');
             }
         }
 
@@ -97,7 +98,7 @@ class ProtectionPlugin extends ServerPlugin {
             if ($this->protectionChecker->isProtectedOrParentProtected($path) ||
                 $this->protectionChecker->isAnyProtectedWithBasename(basename($path))) {
                 $this->logger->warning("FolderProtection DAV: Blocking PUT on protected/forbidden path: $path");
-                throw new Forbidden('Cannot upload/write files into protected folders');
+                throw new Locked('Cannot upload/write files into protected folders');
             }
         }
     }
@@ -133,7 +134,7 @@ class ProtectionPlugin extends ServerPlugin {
         if ($this->protectionChecker->isProtectedOrParentProtected($path) ||
             $this->protectionChecker->isAnyProtectedWithBasename(basename($path))) {
             $this->logger->warning("FolderProtection DAV: Blocking bind in protected path: $path");
-            throw new Forbidden('Cannot create items in protected folders');
+            throw new Locked('Cannot create items in protected folders');
         }
     }
 
@@ -143,7 +144,7 @@ class ProtectionPlugin extends ServerPlugin {
     //     if ($this->protectionChecker->isProtectedOrParentProtected($path) ||
     //         $this->protectionChecker->isAnyProtectedWithBasename(basename($path))) {
     //         $this->logger->warning("FolderProtection DAV: Blocking file creation in protected path: $path");
-    //         throw new Forbidden('Cannot create files in protected folders');
+    //         throw new Locked('Cannot create files in protected folders');
     //     }
     // }
 
@@ -153,7 +154,7 @@ class ProtectionPlugin extends ServerPlugin {
     //     if ($this->protectionChecker->isProtectedOrParentProtected($path) ||
     //         $this->protectionChecker->isAnyProtectedWithBasename(basename($path))) {
     //         $this->logger->warning("FolderProtection DAV: Blocking directory creation in protected path: $path");
-    //         throw new Forbidden('Cannot create directories in protected folders');
+    //         throw new Locked('Cannot create directories in protected folders');
     //     }
     // }
 
@@ -181,7 +182,7 @@ class ProtectionPlugin extends ServerPlugin {
                         'uri' => $uri,
                         'matchedPath' => $checkPath
                     ]);
-                    throw new Forbidden('Cannot delete protected folder: ' . basename($path));
+                    throw new Locked('Cannot delete protected folder: ' . basename($path));
                 }
             }
             
@@ -203,13 +204,13 @@ class ProtectionPlugin extends ServerPlugin {
         // Bloquear se a ORIGEM está protegida
         if ($this->protectionChecker->isProtected($src)) {
             $this->logger->warning("FolderProtection DAV: Blocking move - source is protected: $src");
-            throw new Forbidden('Cannot move protected folder: ' . basename($src));
+            throw new Locked('Cannot move protected folder: ' . basename($src));
         }
         
         // Bloquear se o DESTINO está dentro de uma pasta protegida
         if ($this->protectionChecker->isProtectedOrParentProtected($dest)) {
             $this->logger->warning("FolderProtection DAV: Blocking move - destination is protected: $dest");
-            throw new Forbidden('Cannot move into protected folders');
+            throw new Locked('Cannot move into protected folders');
         }
     }
 
@@ -228,13 +229,13 @@ class ProtectionPlugin extends ServerPlugin {
         // Bloquear se a ORIGEM está protegida
         if ($this->protectionChecker->isProtected($src)) {
             $this->logger->warning("FolderProtection DAV: Blocking copy - source is protected: $src");
-            throw new Forbidden('Cannot copy protected folder: ' . basename($src));
+            throw new Locked('Cannot copy protected folder: ' . basename($src));
         }
         
         // Bloquear se o DESTINO está dentro de uma pasta protegida
         if ($this->protectionChecker->isProtectedOrParentProtected($dest)) {
             $this->logger->warning("FolderProtection DAV: Blocking copy - destination is protected: $dest");
-            throw new Forbidden('Cannot copy into protected folders');
+            throw new Locked('Cannot copy into protected folders');
         }
     }
 
@@ -245,7 +246,7 @@ class ProtectionPlugin extends ServerPlugin {
     //     if ($this->protectionChecker->isProtected($internalPath) ||
     //         $this->protectionChecker->isProtectedOrParentProtected($internalPath)) {
     //         $this->logger->warning("FolderProtection DAV: Blocking write to protected path: $internalPath");
-    //         throw new Forbidden('Cannot write to protected folders');
+    //         throw new Locked('Cannot write to protected folders');
     //     }
     // }
 
@@ -262,7 +263,7 @@ class ProtectionPlugin extends ServerPlugin {
         if ($lock->scope === \Sabre\DAV\Locks\LockInfo::EXCLUSIVE &&
             $this->protectionChecker->isProtected($path)) {
             $this->logger->warning("FolderProtection DAV: Blocking exclusive lock on protected path: $path");
-            throw new Forbidden('Cannot lock protected folders for exclusive access');
+            throw new Locked('Cannot lock protected folders for exclusive access');
         }
     }
 

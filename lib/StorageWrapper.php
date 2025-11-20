@@ -1,10 +1,9 @@
 <?php
 namespace OCA\FolderProtection;
-
+use OCP\Files\NotPermittedException; 
 use OC\Files\Storage\Wrapper\Wrapper;
-use OCP\Files\ForbiddenException;
 use Psr\Log\LoggerInterface;
-use OCP\Files\NotPermittedException;
+
 
 
 
@@ -71,7 +70,7 @@ public function copy($source, $target): bool {
     // Verificar se SOURCE está protegida
     if ($this->protectionChecker->isProtected($source)) {
         error_log("FolderProtection: BLOCKING copy - SOURCE is protected: $source");
-        throw new ForbiddenException(
+        throw new LockedException(
             'This folder is protected and cannot be copied.',
             false
         );
@@ -80,7 +79,7 @@ public function copy($source, $target): bool {
     // Verificar se TARGET está dentro de pasta protegida
     if ($this->protectionChecker->isProtectedOrParentProtected($target)) {
         error_log("FolderProtection: BLOCKING copy - TARGET is protected: $target");
-        throw new ForbiddenException(
+        throw new LockedException(
             'Cannot copy into protected folders.',
             false
         );
@@ -90,7 +89,7 @@ public function copy($source, $target): bool {
     $targetBasename = basename($target);
     if ($this->protectionChecker->isAnyProtectedWithBasename($targetBasename)) {
         error_log("FolderProtection: BLOCKING copy - TARGET basename matches protected: $targetBasename");
-        throw new ForbiddenException(
+        throw new LockedException(
             'Cannot create folders with protected names.',
             false
         );
@@ -142,7 +141,7 @@ public function copyFromStorage(\OCP\Files\Storage\IStorage $sourceStorage, stri
     // Verificar se SOURCE path está protegido
     if (!empty($sourceInternalPath) && $this->protectionChecker->isProtected($sourceInternalPath)) {
         error_log("FolderProtection: BLOCKING - source path protected: $sourceInternalPath");
-        throw new ForbiddenException(
+        throw new LockedException(
             'This folder is protected and cannot be copied.',
             false
         );
@@ -156,7 +155,7 @@ public function copyFromStorage(\OCP\Files\Storage\IStorage $sourceStorage, stri
         
         if ($this->protectionChecker->isProtected($groupFolderPath)) {
             error_log("FolderProtection: BLOCKING - GroupFolder $folderId is protected!");
-            throw new ForbiddenException(
+            throw new LockedException(
                 'This group folder is protected and cannot be copied.',
                 false
             );
@@ -166,7 +165,7 @@ public function copyFromStorage(\OCP\Files\Storage\IStorage $sourceStorage, stri
     // Verificar TARGET
     if ($this->protectionChecker->isProtectedOrParentProtected($targetInternalPath)) {
         error_log("FolderProtection: BLOCKING - target protected: $targetInternalPath");
-        throw new ForbiddenException(
+        throw new LockedException(
             'Cannot copy into protected folders.',
             false
         );
@@ -176,7 +175,7 @@ public function copyFromStorage(\OCP\Files\Storage\IStorage $sourceStorage, stri
     $targetBasename = basename($targetInternalPath);
     if ($this->protectionChecker->isAnyProtectedWithBasename($targetBasename)) {
         error_log("FolderProtection: BLOCKING - basename protected: $targetBasename");
-        throw new ForbiddenException(
+        throw new LockedException(
             'Cannot create folders with protected names.',
             false
         );
@@ -193,7 +192,7 @@ public function copyFromStorage(\OCP\Files\Storage\IStorage $sourceStorage, stri
 
         if ($this->protectionChecker->isProtected($sourceInternalPath)) {
             error_log("FolderProtection: BLOCKING moveFromStorage of $sourceInternalPath");
-            throw new ForbiddenException(
+            throw new LockedException(
                 'This folder is protected and cannot be moved.',
                 false
             );
