@@ -1,4 +1,4 @@
-/* Pasta protegida */
+/* Pasta protegida
 tr.folder-protected {
     background-color: rgba(243, 156, 18, 0.03);
 }
@@ -7,10 +7,10 @@ tr.folder-protected:hover {
     background-color: rgba(243, 156, 18, 0.08);
 }
 
-/* Célula do nome precisa ser relative */
+
 tr.folder-protected td.files-list__row-name {
     position: relative !important;
-}
+} */
 
 /* Badge - canto superior esquerdo da célula */
 /* .folder-protection-icon {
