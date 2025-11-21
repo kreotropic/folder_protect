@@ -98,6 +98,10 @@ $context->registerService(\OCA\FolderProtection\Settings\AdminSettings::class, f
     public function boot(IBootContext $context): void {
         $logger = $context->getServerContainer()->get(LoggerInterface::class);
         $logger->info('FolderProtection: Application boot completed', ['app' => self::APP_ID]);
+        
+        // Register frontend assets globally
+        Util::addScript(self::APP_ID, 'files-integration');
+        Util::addStyle(self::APP_ID, 'files-integration');
     }
 
     /**
