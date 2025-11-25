@@ -1,25 +1,27 @@
-# CakePHP 3
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
 
-/vendor/*
-/config/app.php
+# Build
+js/*.map
 
-/tmp/cache/models/*
-!/tmp/cache/models/empty
-/tmp/cache/persistent/*
-!/tmp/cache/persistent/empty
-/tmp/cache/views/*
-!/tmp/cache/views/empty
-/tmp/sessions/*
-!/tmp/sessions/empty
-/tmp/tests/*
-!/tmp/tests/empty
+# Backups
+*.bak
+*.backup
+*~
 
-/logs/*
-!/logs/empty
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
 
-# CakePHP 2
+# OS
+.DS_Store
+Thumbs.db
 
-/app/tmp/*
-/app/Config/core.php
-/app/Config/database.php
-/vendors/*
+# Logs
+*.log
+
+/vendor/

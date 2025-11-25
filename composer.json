@@ -1,0 +1,12 @@
+{
+    "name": "ricardo/folder_protection",
+    "require-dev": {
+        "nextcloud/ocp": "^32.0"
+    },
+    "authors": [
+        {
+            "name": "Ricardo Ferreira",
+            "email": "ricardo.jofebar@gmail.com"
+        }
+    ]
+}

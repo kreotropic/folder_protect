@@ -1,0 +1,138 @@
+<?php
+declare(strict_types=1);
+
+namespace OCA\FolderProtection\DAV;
+
+use OCA\FolderProtection\ProtectionChecker;
+use Sabre\DAV\ServerPlugin;
+use Sabre\DAV\PropFind;
+use Sabre\DAV\INode;
+use Psr\Log\LoggerInterface;
+
+/**
+ * Plugin que adiciona propriedades DAV customizadas para folders protegidos
+ */
+class ProtectionPropertyPlugin extends ServerPlugin {
+    
+    private ProtectionChecker $protectionChecker;
+    private LoggerInterface $logger;
+    private ?\Sabre\DAV\Server $server = null;
+
+    // Namespace e propriedades customizadas
+    const NS_NEXTCLOUD = 'http://nextcloud.org/ns';
+    const PROP_IS_PROTECTED = '{http://nextcloud.org/ns}is-protected';
+    const PROP_PROTECTION_REASON = '{http://nextcloud.org/ns}protection-reason';
+    const PROP_IS_DELETABLE = '{http://nextcloud.org/ns}is-deletable';
+    const PROP_IS_RENAMEABLE = '{http://nextcloud.org/ns}is-renameable';
+    const PROP_IS_MOVEABLE = '{http://nextcloud.org/ns}is-moveable';
+
+    public function __construct(
+        ProtectionChecker $protectionChecker,
+        LoggerInterface $logger
+    ) {
+        $this->protectionChecker = $protectionChecker;
+        $this->logger = $logger;
+    }
+
+    /**
+     * Inicializar plugin no servidor DAV
+     */
+    public function initialize(\Sabre\DAV\Server $server): void {
+        $this->server = $server;
+        $server->on('propFind', [$this, 'propFind']);
+        
+        $this->logger->debug('FolderProtection: ProtectionPropertyPlugin initialized');
+    }
+
+    /**
+     * Handler para PROPFIND - adiciona propriedades customizadas
+     */
+    public function propFind(PropFind $propFind, INode $node): void {
+        // Só aplicar a ficheiros e diretórios do Nextcloud
+        if (!($node instanceof \OCA\DAV\Connector\Sabre\Directory) && 
+            !($node instanceof \OCA\DAV\Connector\Sabre\File)) {
+            return;
+        }
+
+        $path = $this->getNodePath($node);
+        
+        // Se não conseguimos determinar o path, skip
+        if (empty($path)) {
+            return;
+        }
+
+        // Verificar proteção uma vez
+        $isProtected = $this->protectionChecker->isProtected($path);
+        $protectionInfo = $isProtected ? $this->protectionChecker->getProtectionInfo($path) : null;
+
+        $this->logger->debug("FolderProtection PROPFIND: path='$path', protected=" . ($isProtected ? 'yes' : 'no'));
+
+        // 1. Flag: está protegido?
+        $propFind->handle(self::PROP_IS_PROTECTED, function() use ($isProtected) {
+            return $isProtected ? 'true' : 'false';
+        });
+
+        // 2. Razão da proteção
+        $propFind->handle(self::PROP_PROTECTION_REASON, function() use ($protectionInfo) {
+            return $protectionInfo['reason'] ?? '';
+        });
+
+        // 3. Meta-propriedades para controlar UI do cliente
+        $propFind->handle(self::PROP_IS_DELETABLE, function() use ($isProtected) {
+            return $isProtected ? 'false' : 'true';
+        });
+
+        $propFind->handle(self::PROP_IS_RENAMEABLE, function() use ($isProtected) {
+            return $isProtected ? 'false' : 'true';
+        });
+
+        $propFind->handle(self::PROP_IS_MOVEABLE, function() use ($isProtected) {
+            return $isProtected ? 'false' : 'true';
+        });
+    }
+
+    /**
+     * Extrair path interno do node
+     */
+    private function getNodePath(INode $node): string {
+        try {
+            if (method_exists($node, 'getFileInfo')) {
+                $fileInfo = $node->getFileInfo();
+                $path = $fileInfo->getInternalPath();
+                
+                // Normalizar path: deve começar com /files/
+                if (strpos($path, '__groupfolders/') === 0) {
+                    // Group folder: /__groupfolders/ID ou /files/nome
+                    // Vamos usar o path como está
+                    return '/' . $path;
+                }
+                
+                if (strpos($path, 'files/') !== 0) {
+                    $path = 'files/' . ltrim($path, '/');
+                }
+                
+                return '/' . $path;
+            }
+        } catch (\Exception $e) {
+            $this->logger->error('FolderProtection: Error getting node path', [
+                'exception' => $e->getMessage()
+            ]);
+        }
+        
+        return '';
+    }
+
+    /**
+     * Nome do plugin
+     */
+    public function getPluginName(): string {
+        return 'folder-protection-properties';
+    }
+
+    /**
+     * Features suportadas
+     */
+    public function getFeatures(): array {
+        return ['folder-protection'];
+    }
+}

@@ -1,0 +1,62 @@
+<?xml version="1.0"?>
+<info xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
+    <id>folder_protection</id>
+    <name>Folder Protection</name>
+    <summary>Protect folders from being moved, copied, or deleted</summary>
+    <description>Prevents specific folders from being moved, copied, or deleted to avoid server performance issues with large folders.</description>
+    <version>0.1.0</version>
+    <licence>agpl</licence>
+    <author>Ricardo</author>
+    <namespace>FolderProtection</namespace>
+    <category>files</category>
+    
+    <dependencies>
+        <nextcloud min-version="31" max-version="31"/>
+    </dependencies>
+    <commands>
+        <command>OCA\FolderProtection\Command\ListProtected</command>
+        <command>OCA\FolderProtection\Command\Protect</command>
+        <command>OCA\FolderProtection\Command\Unprotect</command>
+        <command>OCA\FolderProtection\Command\CheckProtection</command>
+    </commands>
+    
+    <settings>
+        <admin>OCA\FolderProtection\Settings\AdminSettings</admin>
+    </settings>
+
+    <dav>
+        <properties>
+            <property namespace="http://nextcloud.org/ns" name="is-protected">
+                <description>Indicates if the folder is protected from modifications</description>
+            </property>
+            <property namespace="http://nextcloud.org/ns" name="protection-reason">
+                <description>Reason why the folder is protected</description>
+            </property>
+            <property namespace="http://nextcloud.org/ns" name="is-deletable">
+                <description>Indicates if the folder can be deleted</description>
+            </property>
+            <property namespace="http://nextcloud.org/ns" name="is-renameable">
+                <description>Indicates if the folder can be renamed</description>
+            </property>
+            <property namespace="http://nextcloud.org/ns" name="is-moveable">
+                <description>Indicates if the folder can be moved</description>
+            </property>
+        </properties>
+    </dav>
+
+
+    <types>
+        <filesystem/>
+    </types>
+
+    <scripts>
+        <script>files-integration.js</script>
+    </scripts>
+
+    <styles>
+        <style>files-integration.css</style>
+    </styles>
+
+
+</info>
