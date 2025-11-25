@@ -54,6 +54,20 @@ console.log('🔵 folder-protection-ui.js LOADED');
             if (document.getElementById('folder-protection-styles')) return;
 
             const styles = `
+                /* CSS variables para fácil ajuste e possível theming */
+                :root {
+                    --protection-badge-color: rgba(0, 0, 0, 0.9);
+                    --protection-badge-text-color: #fff;
+                    --protection-badge-zindex: 1000;
+                    --protection-badge-shadow: 0 1px 3px rgba(0,0,0,0.5);
+                    --protection-badge-size: 14px;
+                }
+
+                /* Agrupar regras que usam o mesmo seletor de linha protegida */
+                .files-list__row[${this.config.protectedAttr}="true"] {
+                    /* alvo: o ícone e o nome recebem estilos via pseudo-elementos abaixo */
+                }
+
                 .files-list__row[${this.config.protectedAttr}="true"] .files-list__row-icon {
                     position: relative !important;
                 }
@@ -63,21 +77,22 @@ console.log('🔵 folder-protection-ui.js LOADED');
                     position: absolute;
                     bottom: 15px;
                     right: -9px;
-                    font-size: 14px;
+                    font-size: var(--protection-badge-size);
                     line-height: 16px;
-                    z-index: 10;
-                    filter: drop-shadow(0 1px 3px rgba(0,0,0,0.5));
+                    z-index: calc(var(--protection-badge-zindex) - 990); /* small local stacking */
+                    filter: drop-shadow(var(--protection-badge-shadow));
                     pointer-events: none;
                 }
 
+                /* Badge de texto (visível ao hover) */
                 .files-list__row[${this.config.protectedAttr}="true"] .files-list__row-name::after {
                     content: 'Protected folder';
                     position: absolute;
                     top: -20px;
                     left: 50%;
                     transform: translateX(-50%);
-                    background: rgba(0, 0, 0, 0.9);
-                    color: white;
+                    background: var(--protection-badge-color);
+                    color: var(--protection-badge-text-color);
                     padding: 6px 10px;
                     border-radius: 4px;
                     font-size: 12px;
@@ -85,7 +100,7 @@ console.log('🔵 folder-protection-ui.js LOADED');
                     opacity: 0;
                     pointer-events: none;
                     transition: opacity 0.2s;
-                    z-index: 1000;
+                    z-index: var(--protection-badge-zindex);
                 }
 
                 .files-list__row[${this.config.protectedAttr}="true"] .files-list__row-name:hover::after {
@@ -93,7 +108,7 @@ console.log('🔵 folder-protection-ui.js LOADED');
                 }
 
                 .files-list__row[${this.config.protectedAttr}="true"] .files-list__row-icon-overlay {
-                    z-index: 11;
+                    z-index: calc(var(--protection-badge-zindex) + 1);
                 }
 
                 @keyframes badgeAppear {
@@ -236,10 +251,24 @@ console.log('🔵 folder-protection-ui.js LOADED');
             return match ? decodeURIComponent(match[1]) : '/';
         },
 
+        /**
+         * Constrói o path completo com prefixo /files
+         * 
+         * Explicação:
+         * - window.location.hash traz dir sem /files (ex: /Docs)
+         * - Backend armazena com /files (ex: /files/Docs)
+         * - Precisamos normalizar para fazer match com a BD
+         */
         buildFullPath(currentDir, filename) {
+            // Remove prefixo /files se estiver presente
             currentDir = currentDir.replace(/^\/files/, '');
+            
+            // Constrói o caminho
             let fullPath = currentDir === '/' ? `/${filename}` : `${currentDir}/${filename}`;
+            
+            // Adiciona /files e normaliza slashes múltiplos
             fullPath = `/files${fullPath}`.replace(/\/+/g, '/');
+            
             return fullPath;
         },
 
