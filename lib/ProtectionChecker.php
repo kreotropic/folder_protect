@@ -206,7 +206,7 @@ public function getProtectionInfo(string $path): ?array {
         ->where($qb->expr()->eq('path', $qb->createNamedParameter($path)));
     
     $result = $qb->executeQuery();
-    $row = $result->fetch();
+    $row = method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch();
     $result->closeCursor();
     
     // Cache result
@@ -217,4 +217,26 @@ public function getProtectionInfo(string $path): ?array {
     return $row ?: null;
 }
 
+    /**
+     * Verifica se deve enviar notificação (Rate Limiting)
+     * Evita spam de notificações para a mesma pasta/ação num curto período.
+     * TTL: 30 minutos (1800 segundos)
+     */
+    public function shouldNotify(string $path, string $action): bool {
+        $cacheKey = 'notification_sent_' . md5($path) . '_' . $action;
+        
+        if ($this->cache->get($cacheKey)) {
+            return false;
+        }
+        
+        $this->cache->set($cacheKey, 1, 1800);
+        return true;
+    }
+
+    /**
+     * Limpa toda a cache da aplicação (incluindo rate limiting de notificações)
+     */
+    public function clearCache(): void {
+        $this->cache->clear();
+    }
 }

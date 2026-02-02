@@ -103,10 +103,24 @@ class Application extends App implements IBootstrap {
             );
         });
 
+        $context->registerService(\OCA\FolderProtection\Command\ClearNotifications::class, function ($c) {
+            return new \OCA\FolderProtection\Command\ClearNotifications(
+                $c->get(\OCA\FolderProtection\ProtectionChecker::class)
+            );
+        });
+
         // Regista as definições de admin
         $context->registerService(\OCA\FolderProtection\Settings\AdminSettings::class, function ($c) {
             return new \OCA\FolderProtection\Settings\AdminSettings();
         });
+
+        // Regista o Notifier para notificações
+        $context->registerService(\OCA\FolderProtection\Notification\Notifier::class, function ($c) {
+            return new \OCA\FolderProtection\Notification\Notifier(
+                $c->get(\OCP\L10N\IFactory::class)
+            );
+        });
+        $context->registerNotifier(\OCA\FolderProtection\Notification\Notifier::class);
 
         // Regista o hook que irá adicionar o StorageWrapper
         Util::connectHook('OC_Filesystem', 'preSetup', $this, 'addStorageWrapper');
@@ -165,5 +179,20 @@ class Application extends App implements IBootstrap {
         }
 
         return $storage;
+    }
+
+    /**
+     * Returns the list of commands for this app.
+     *
+     * @return array
+     */
+    public function getCommands(): array {
+        return [
+            \OCA\FolderProtection\Command\ListProtected::class,
+            \OCA\FolderProtection\Command\Protect::class,
+            \OCA\FolderProtection\Command\Unprotect::class,
+            \OCA\FolderProtection\Command\CheckProtection::class,
+            \OCA\FolderProtection\Command\ClearNotifications::class,
+        ];
     }
 }
