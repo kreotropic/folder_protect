@@ -74,6 +74,7 @@ class ProtectionPlugin extends ServerPlugin {
     }
 
     public function beforeMethod($request, $response) {
+        try {
         $raw = $request->getPath();
         $path = $this->getInternalPath($raw);
         $method = $request->getMethod();
@@ -88,7 +89,6 @@ class ProtectionPlugin extends ServerPlugin {
             foreach ($pathsToCheck as $candidate) {
                 if ($this->protectionChecker->isProtected($candidate) ||
                     $this->protectionChecker->isAnyProtectedWithBasename(basename($candidate))) {
-                    try {
                         $info = $this->protectionChecker->getProtectionInfo($candidate);
                         $reason = 'Protected by server policy'; // Default reason
                         if (is_array($info) && !empty($info['reason'])) {
@@ -98,10 +98,6 @@ class ProtectionPlugin extends ServerPlugin {
                         $this->setHeaders('copy', $reason);
                         $this->sendProtectionNotification($candidate, 'copy');
                         throw new Locked('Cannot copy protected folders.');
-                    } catch (\Throwable $e) {
-                        $this->logger->error("FolderProtection DAV: TypeError in COPY block for path '$candidate': " . $e->getMessage() . "\n" . $e->getTraceAsString());
-                        throw new Locked('Internal server error during copy protection check. Please check Nextcloud logs for details.'); // Always return 423 for protected folders
-                    }
                 }
             }
         }
@@ -110,7 +106,6 @@ class ProtectionPlugin extends ServerPlugin {
             foreach ($pathsToCheck as $candidate) {
                 if ($this->protectionChecker->isProtected($candidate)) {
                     $this->logger->debug("FolderProtection DAV: PROPFIND: '$candidate' IS protected.");
-                    try {
                         $info = $this->protectionChecker->getProtectionInfo($candidate);
                         $reason = 'Protected by server policy'; // Default reason
                         if (is_array($info) && !empty($info['reason'])) {
@@ -120,15 +115,16 @@ class ProtectionPlugin extends ServerPlugin {
                         $this->setHeaders('read', $reason);
                         $this->sendProtectionNotification($candidate, 'read');
                         throw new Locked('Protected folder.');
-                    } catch (\Throwable $e) {
-                        $this->logger->error("FolderProtection DAV: TypeError in PROPFIND block for path '$candidate': " . $e->getMessage() . "\n" . $e->getTraceAsString());
-                        throw new Locked('Internal server error during PROPFIND protection check. Please check Nextcloud logs for details.'); // Always return 423 for protected folders
-                    }
                 }
                 $this->logger->debug("FolderProtection DAV: PROPFIND: '$candidate' IS NOT protected.");
             }
         }
 
+        } catch (\Throwable $e) {
+            if ($e instanceof Locked) throw $e;
+            $this->logger->error("FolderProtection DAV: Error in beforeMethod: " . $e->getMessage());
+            throw new Locked('Internal server error during protection check.');
+        }
     }
 
     private function getInternalPath($uri) {
@@ -185,6 +181,7 @@ class ProtectionPlugin extends ServerPlugin {
     }
 
     public function beforeBind($uri) {
+        try {
         $path = $this->getInternalPath($uri);
         $this->logger->debug("FolderProtection DAV: beforeBind checking '$path'");
 
@@ -196,15 +193,20 @@ class ProtectionPlugin extends ServerPlugin {
                 throw new Locked('Cannot create items in protected folders');
             }
         }
+        } catch (\Throwable $e) {
+            if ($e instanceof Locked) throw $e;
+            $this->logger->error("FolderProtection DAV: Error in beforeBind: " . $e->getMessage());
+            throw new Locked('Internal server error during protection check.');
+        }
     }
 
     public function beforeUnbind($uri) {
+        try {
         $path = $this->getInternalPath($uri);
         $this->logger->info("FolderProtection DAV: beforeUnbind checking '$path'");
         
         foreach ($this->buildPathsToCheck($path) as $checkPath) {
             if ($this->protectionChecker->isProtected($checkPath)) {
-                try {
                     $info = $this->protectionChecker->getProtectionInfo($checkPath);
                     $reason = 'Protected by server policy'; // Default reason
                     if (is_array($info) && !empty($info['reason'])) {
@@ -217,15 +219,17 @@ class ProtectionPlugin extends ServerPlugin {
                         '🛡️ FOLDER PROTECTED: This folder is protected by server policy and cannot be deleted. ' .
                         'If deleted locally, please restore from Recycle Bin or force re-sync from server.'
                     );
-                } catch (\Throwable $e) {
-                    $this->logger->error("FolderProtection DAV: TypeError in beforeUnbind block for path '$checkPath': " . $e->getMessage() . "\n" . $e->getTraceAsString());
-                    throw new Locked('Internal server error during delete protection check. Please check Nextcloud logs for details.'); // Always return 423 for protected folders
-                }
             }
+        }
+        } catch (\Throwable $e) {
+            if ($e instanceof Locked) throw $e;
+            $this->logger->error("FolderProtection DAV: Error in beforeUnbind: " . $e->getMessage());
+            throw new Locked('Internal server error during protection check.');
         }
     }
 
     public function beforeMove($sourcePath, $destinationPath) {
+        try {
         $src = $this->getInternalPath($sourcePath);
         $dest = $this->getInternalPath($destinationPath);
         
@@ -233,7 +237,6 @@ class ProtectionPlugin extends ServerPlugin {
         
         foreach ($this->buildPathsToCheck($src) as $checkSrc) {
             if ($this->protectionChecker->isProtected($checkSrc)) {
-                try {
                     $info = $this->protectionChecker->getProtectionInfo($checkSrc);
                     $reason = 'Protected by server policy'; // Default reason
                     if (is_array($info) && !empty($info['reason'])) {
@@ -246,15 +249,17 @@ class ProtectionPlugin extends ServerPlugin {
                         '🛡️ FOLDER PROTECTED: This folder is protected by server policy and cannot be moved. ' .
                         'If moved locally, please restore from Recycle Bin or force re-sync from server.'
                     );
-                } catch (\Throwable $e) {
-                    $this->logger->error("FolderProtection DAV: TypeError in beforeMove block for path '$checkSrc': " . $e->getMessage() . "\n" . $e->getTraceAsString());
-                    throw new Locked('Internal server error during move protection check. Please check Nextcloud logs for details.'); // Always return 423 for protected folders
-                }
             }
+        }
+        } catch (\Throwable $e) {
+            if ($e instanceof Locked) throw $e;
+            $this->logger->error("FolderProtection DAV: Error in beforeMove: " . $e->getMessage());
+            throw new Locked('Internal server error during protection check.');
         }
     }
 
     public function beforeCopy($sourcePath, $destinationPath) {
+        try {
         $src = $this->getInternalPath($sourcePath);
         $dest = $this->getInternalPath($destinationPath);
         
@@ -262,7 +267,6 @@ class ProtectionPlugin extends ServerPlugin {
         
         foreach ($this->buildPathsToCheck($src) as $checkSrc) {
             if ($this->protectionChecker->isProtected($checkSrc)) {
-                try {
                     $info = $this->protectionChecker->getProtectionInfo($checkSrc);
                     $reason = 'Protected by server policy'; // Default reason
                     if (is_array($info) && !empty($info['reason'])) {
@@ -272,19 +276,20 @@ class ProtectionPlugin extends ServerPlugin {
                     $this->setHeaders('copy', $reason);
                     $this->sendProtectionNotification($checkSrc, 'copy');
                     throw new Locked('Cannot copy protected folder: ' . basename($src));
-                } catch (\Throwable $e) {
-                    $this->logger->error("FolderProtection DAV: TypeError in beforeCopy block for path '$checkSrc': " . $e->getMessage() . "\n" . $e->getTraceAsString());
-                    throw new Locked('Internal server error during copy protection check. Please check Nextcloud logs for details.'); // Always return 423 for protected folders
-                }
             }
+        }
+        } catch (\Throwable $e) {
+            if ($e instanceof Locked) throw $e;
+            $this->logger->error("FolderProtection DAV: Error in beforeCopy: " . $e->getMessage());
+            throw new Locked('Internal server error during protection check.');
         }
     }
 
     public function propPatch($path, \Sabre\DAV\PropPatch $propPatch) {
+        try {
         $internalPath = $this->getInternalPath($path);
         foreach ($this->buildPathsToCheck($internalPath) as $checkPath) {
             if ($this->protectionChecker->isProtected($checkPath)) {
-                try {
                     $info = $this->protectionChecker->getProtectionInfo($checkPath);
                     $reason = 'Protected by server policy'; // Default reason
                     if (is_array($info) && !empty($info['reason'])) {
@@ -294,20 +299,21 @@ class ProtectionPlugin extends ServerPlugin {
                     $this->setHeaders('prop_patch', $reason);
                     $this->sendProtectionNotification($checkPath, 'prop_patch');
                     throw new Locked('Cannot update properties of protected folder');
-                } catch (\Throwable $e) {
-                    $this->logger->error("FolderProtection DAV: TypeError in propPatch block for path '$checkPath': " . $e->getMessage() . "\n" . $e->getTraceAsString());
-                    throw new Locked('Internal server error during property update protection check. Please check Nextcloud logs for details.'); // Always return 423 for protected folders
-                }
             }
+        }
+        } catch (\Throwable $e) {
+            if ($e instanceof Locked) throw $e;
+            $this->logger->error("FolderProtection DAV: Error in propPatch: " . $e->getMessage());
+            throw new Locked('Internal server error during protection check.');
         }
     }
 
     public function beforeLock($uri, \Sabre\DAV\Locks\LockInfo $lock) {
+        try {
         $path = $this->getInternalPath($uri);
         if ($lock->scope === \Sabre\DAV\Locks\LockInfo::EXCLUSIVE) {
             foreach ($this->buildPathsToCheck($path) as $checkPath) {
                 if ($this->protectionChecker->isProtected($checkPath)) {
-                    try {
                         $info = $this->protectionChecker->getProtectionInfo($checkPath);
                         $reason = 'Protected by server policy'; // Default reason
                         if (is_array($info) && !empty($info['reason'])) {
@@ -317,12 +323,13 @@ class ProtectionPlugin extends ServerPlugin {
                         $this->setHeaders('lock', $reason);
                         $this->sendProtectionNotification($checkPath, 'lock');
                         throw new Locked('Cannot lock items in protected folders');
-                    } catch (\Throwable $e) {
-                        $this->logger->error("FolderProtection DAV: TypeError in beforeLock block for path '$checkPath': " . $e->getMessage() . "\n" . $e->getTraceAsString());
-                        throw new Locked('Internal server error during lock protection check. Please check Nextcloud logs for details.'); // Always return 423 for protected folders
-                    }
                 }
             }
+        }
+        } catch (\Throwable $e) {
+            if ($e instanceof Locked) throw $e;
+            $this->logger->error("FolderProtection DAV: Error in beforeLock: " . $e->getMessage());
+            throw new Locked('Internal server error during protection check.');
         }
     }
 

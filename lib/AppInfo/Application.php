@@ -120,7 +120,6 @@ class Application extends App implements IBootstrap {
                 $c->get(\OCP\L10N\IFactory::class)
             );
         });
-        $context->registerNotifier(\OCA\FolderProtection\Notification\Notifier::class);
 
         // Regista o hook que irá adicionar o StorageWrapper
         Util::connectHook('OC_Filesystem', 'preSetup', $this, 'addStorageWrapper');
