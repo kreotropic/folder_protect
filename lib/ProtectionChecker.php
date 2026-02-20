@@ -46,20 +46,17 @@ class ProtectionChecker {
     public function isProtected(string $path): bool {
         $path = $this->normalizePath($path);
         // Verifica se o path está protegido (exact match). Usa cache para acelerar.
-        error_log("FolderProtection: ProtectionChecker checking path: '$path'");
 
         // Check cache first
         $cacheKey = 'protected_' . md5($path);
         $cached = $this->cache->get($cacheKey);
         if ($cached !== null) {
             // Cache hit: devolve resultado imediatamente.
-            error_log("FolderProtection: Cache hit for '$path': " . ($cached ? 'PROTECTED' : 'NOT PROTECTED'));
             return (bool)$cached;
         }
 
         // Check database
         $result = $this->checkDatabaseExact($path);
-        error_log("FolderProtection: Database check for '$path': " . ($result ? 'PROTECTED' : 'NOT PROTECTED'));
 
         // Cache result for 5 minutes
         $this->cache->set($cacheKey, $result ? 1 : 0, 300);
@@ -75,7 +72,6 @@ class ProtectionChecker {
 
         // Primeiro verifica o próprio path
         if ($this->isProtected($path)) {
-            error_log("FolderProtection: Path '$path' is directly protected");
             return true;
         }
 
@@ -89,7 +85,6 @@ class ProtectionChecker {
             }
             $currentPath .= '/' . $part;
             if ($this->isProtected($currentPath)) {
-                error_log("FolderProtection: Parent path '$currentPath' is protected for '$path'");
                 return true;
             }
         }
@@ -159,7 +154,6 @@ class ProtectionChecker {
         // Procura se existe algum path protegido com o mesmo basename
         foreach ($protectedFolders as $protectedPath) {
             if (basename($protectedPath) === $basename) {
-                error_log("FolderProtection: Found protected folder with basename '$basename': $protectedPath");
                 return true;
             }
         }
@@ -187,34 +181,56 @@ class ProtectionChecker {
  * @param string $path
  * @return array|null ['id', 'path', 'reason', 'created_by', 'created_at'] ou null
  */
-public function getProtectionInfo(string $path): ?array {
-    $path = $this->normalizePath($path);
-    
-    // Check cache first
-    $cacheKey = 'folder_protection_info_' . md5($path);
-    if ($this->cache !== null) {
-        $cached = $this->cache->get($cacheKey);
-        if ($cached !== null) {
-            return $cached ?: null;
+    public function getProtectionInfo(string $path): ?array {
+        $path = $this->normalizePath($path);
+        
+        // Check cache first
+        $cacheKey = 'folder_protection_info_' . md5($path);
+        if ($this->cache !== null) {
+            $cached = $this->cache->get($cacheKey); // Ensure this returns array|false|null
+            if ($cached !== null) {
+                return $cached ?: null;
+            }
         }
+        
+        // Query database
+        $qb = $this->db->getQueryBuilder();
+        $qb->select('*')
+            ->from('folder_protection')
+            ->where($qb->expr()->eq('path', $qb->createNamedParameter($path)));
+        
+        $result = $qb->executeQuery();
+        $row = method_exists($result, 'fetchAssociative') ? $result->fetchAssociative() : $result->fetch();
+        $result->closeCursor();
+        
+        // Cache result
+        if ($this->cache !== null) {
+            $this->cache->set($cacheKey, $row ?: false, 300); // 5 min
+        }
+        
+        return $row ?: null;
     }
-    
-    // Query database
-    $qb = $this->db->getQueryBuilder();
-    $qb->select('*')
-        ->from('folder_protection')
-        ->where($qb->expr()->eq('path', $qb->createNamedParameter($path)));
-    
-    $result = $qb->executeQuery();
-    $row = $result->fetch();
-    $result->closeCursor();
-    
-    // Cache result
-    if ($this->cache !== null) {
-        $this->cache->set($cacheKey, $row ?: false, 300); // 5 min
-    }
-    
-    return $row ?: null;
-}
 
+    /**
+     * Verifica se deve enviar notificação (Rate Limiting)
+     * Evita spam de notificações para a mesma pasta/ação num curto período.
+     * TTL: 30 minutos (1800 segundos)
+     */
+    public function shouldNotify(string $path, string $action): bool {
+        $cacheKey = 'notification_sent_' . md5($path) . '_' . $action;
+        
+        if ($this->cache->get($cacheKey)) {
+            return false;
+        }
+        
+        $this->cache->set($cacheKey, 1, 1800);
+        return true;
+    }
+
+    /**
+     * Limpa toda a cache da aplicação (incluindo rate limiting de notificações)
+     */
+    public function clearCache(): void {
+        $this->cache->clear();
+    }
 }

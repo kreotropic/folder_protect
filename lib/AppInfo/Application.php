@@ -6,6 +6,9 @@ namespace OCA\FolderProtection\AppInfo;
 use OC\Files\Filesystem;
 use OCA\FolderProtection\ProtectionChecker;
 use OCA\FolderProtection\StorageWrapper;
+use OCA\FolderProtection\DAV\ProtectionPlugin;
+use OCA\FolderProtection\DAV\ProtectionPropertyPlugin;
+use OCA\FolderProtection\DAV\LockPlugin;
 use OCA\FolderProtection\Listener\SabrePluginListener;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootstrap;
@@ -76,6 +79,30 @@ class Application extends App implements IBootstrap {
             );
         });
 
+        // Regista o ProtectionPlugin (Lógica DAV)
+        $context->registerService(ProtectionPlugin::class, function ($c) {
+            return new ProtectionPlugin(
+                $c->get(ProtectionChecker::class),
+                $c->get(LoggerInterface::class)
+            );
+        });
+
+        // Regista o ProtectionPropertyPlugin (Propriedades DAV)
+        $context->registerService(ProtectionPropertyPlugin::class, function ($c) {
+            return new ProtectionPropertyPlugin(
+                $c->get(ProtectionChecker::class),
+                $c->get(LoggerInterface::class)
+            );
+        });
+
+        // Regista o LockPlugin (Gerência automática de locks WebDAV)
+        $context->registerService(LockPlugin::class, function ($c) {
+            return new LockPlugin(
+                $c->get(ProtectionChecker::class),
+                $c->get(LoggerInterface::class)
+            );
+        });
+
         // Regista o listener para eventos DAV
         $context->registerEventListener(
             SabrePluginAuthInitEvent::class,
@@ -109,9 +136,22 @@ class Application extends App implements IBootstrap {
             );
         });
 
+        $context->registerService(\OCA\FolderProtection\Command\ClearNotifications::class, function ($c) {
+            return new \OCA\FolderProtection\Command\ClearNotifications(
+                $c->get(\OCA\FolderProtection\ProtectionChecker::class)
+            );
+        });
+
         // Regista as definições de admin
         $context->registerService(\OCA\FolderProtection\Settings\AdminSettings::class, function ($c) {
             return new \OCA\FolderProtection\Settings\AdminSettings();
+        });
+
+        // Regista o Notifier para notificações
+        $context->registerService(\OCA\FolderProtection\Notification\Notifier::class, function ($c) {
+            return new \OCA\FolderProtection\Notification\Notifier(
+                $c->get(\OCP\L10N\IFactory::class)
+            );
         });
 
         // Regista o hook que irá adicionar o StorageWrapper
@@ -126,6 +166,7 @@ class Application extends App implements IBootstrap {
      * - Regista mensagens de log para debugging.
      */
     public function boot(IBootContext $context): void {
+        error_log("DEBUG_FP: Application boot started for folder_protection");
         $logger = $context->getServerContainer()->get(LoggerInterface::class);
         $logger->info('FolderProtection: Application boot completed', ['app' => self::APP_ID]);
         
@@ -191,5 +232,20 @@ class Application extends App implements IBootstrap {
             $logger->error('FolderProtection: Failed to create StorageWrapper, returning original storage', ['mountPoint' => $mountPoint, 'exception' => $e]);
             return $storage;
         }
+    }
+
+    /**
+     * Returns the list of commands for this app.
+     *
+     * @return array
+     */
+    public function getCommands(): array {
+        return [
+            \OCA\FolderProtection\Command\ListProtected::class,
+            \OCA\FolderProtection\Command\Protect::class,
+            \OCA\FolderProtection\Command\Unprotect::class,
+            \OCA\FolderProtection\Command\CheckProtection::class,
+            \OCA\FolderProtection\Command\ClearNotifications::class,
+        ];
     }
 }
