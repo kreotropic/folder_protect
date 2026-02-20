@@ -41,7 +41,6 @@ class ProtectionPlugin extends ServerPlugin {
     }
 
     public function initialize(Server $server) {
-        error_log("DEBUG_FP: ProtectionPlugin initialize called (Plugin attached to Server)");
         $this->server = $server;
 
         $server->on('beforeBind', [$this, 'beforeBind'], 10);
@@ -101,10 +100,6 @@ class ProtectionPlugin extends ServerPlugin {
             $path = $this->getInternalPath($raw);
             $method = $request->getMethod();
 
-            // LOGS DE DEBUG (Usando error_log para visibilidade imediata no Docker logs)
-            error_log("DEBUG_FP: beforeMethod: $method -> raw='$raw'");
-            error_log("DEBUG_FP: beforeMethod: internal path='$path'");
-
             $pathsToCheck = $this->buildPathsToCheck($path);
             
             // Intercepta DELETE e MOVE cedo para garantir que o "touch" (ETag update) persiste.
@@ -113,7 +108,6 @@ class ProtectionPlugin extends ServerPlugin {
             if ($method === 'DELETE' || $method === 'MOVE') {
                 foreach ($pathsToCheck as $candidate) {
                     if ($this->protectionChecker->isProtected($candidate)) {
-                        error_log("DEBUG_FP: Protected path match: $candidate");
                         // 1. Força atualização do ETag para que o cliente detete mudança e restaure a pasta
                         $this->touchProtectedNode($raw);
 
@@ -125,7 +119,6 @@ class ProtectionPlugin extends ServerPlugin {
                         }
                         
                         $action = ($method === 'DELETE') ? 'delete' : 'move';
-                        error_log("DEBUG_FP: Blocking $method on protected path: $candidate");
                         $this->setHeaders($action, $reason);
                         $this->sendProtectionNotification($candidate, $action);
                         
@@ -164,19 +157,16 @@ class ProtectionPlugin extends ServerPlugin {
     }
 
     private function sendErrorResponse(int $code, string $message): void {
-        error_log("DEBUG_FP: Sending custom error response. Code: $code");
-        
         $this->server->httpResponse->setStatus($code);
         $this->server->httpResponse->setHeader('Content-Type', 'application/xml; charset=utf-8');
-        
+
         // Formato de erro padrão do SabreDAV/Nextcloud
         $xml = '<?xml version="1.0" encoding="utf-8"?>' . "\n";
         $xml .= '<d:error xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns">' . "\n";
         $xml .= '  <s:exception>Sabre\DAV\Exception\Forbidden</s:exception>' . "\n";
         $xml .= '  <s:message>' . htmlspecialchars($message, ENT_XML1, 'UTF-8') . '</s:message>' . "\n";
         $xml .= '</d:error>';
-        
-        error_log("DEBUG_FP: XML Body: " . $xml);
+
         $this->server->httpResponse->setBody($xml);
     }
 
@@ -244,28 +234,12 @@ class ProtectionPlugin extends ServerPlugin {
     }
 
     public function beforeUnbind($uri) {
-        try {
-            $path = $this->getInternalPath($uri);
-            $this->logger->info("FolderProtection DAV: beforeUnbind checking '$path'");
-            
-            // A verificação de DELETE foi movida para beforeMethod.
-            // Isto evita que exceções causem rollback na atualização do ETag.
-            // O StorageWrapper continua a proteger deletes internos (não-DAV).
-        } catch (\Throwable $e) {
-            if ($e instanceof FolderLocked) throw $e;
-            $this->logger->error("FolderProtection DAV: Error in beforeUnbind: " . $e->getMessage());
-            throw new FolderLocked('Internal server error during protection check.');
-        }
+        // DELETE verification is handled in beforeMethod to avoid ETag update rollback.
+        // StorageWrapper still protects non-DAV internal deletes.
     }
 
     public function beforeMove($sourcePath, $destinationPath) {
-        try {
-            // A verificação de MOVE foi movida para beforeMethod para evitar rollback de transação.
-        } catch (\Throwable $e) {
-            if ($e instanceof FolderLocked) throw $e;
-            $this->logger->error("FolderProtection DAV: Error in beforeMove: " . $e->getMessage());
-            throw new FolderLocked('Internal server error during protection check.');
-        }
+        // MOVE verification is handled in beforeMethod to avoid transaction rollback.
     }
 
     public function beforeCopy($sourcePath, $destinationPath) {
@@ -350,7 +324,6 @@ class ProtectionPlugin extends ServerPlugin {
      */
     private function touchProtectedNode(string $uri): void {
         try {
-            error_log("DEBUG_FP: touchProtectedNode called for $uri");
             // 1. Atualiza a própria pasta
             $node = $this->server->tree->getNodeForPath($uri);
             if ($node instanceof Node) {
@@ -370,7 +343,7 @@ class ProtectionPlugin extends ServerPlugin {
                 }
             }
         } catch (\Throwable $e) {
-            error_log("DEBUG_FP: Failed to touch node '$uri': " . $e->getMessage());
+            $this->logger->warning("FolderProtection DAV: Failed to touch node '$uri': " . $e->getMessage());
         }
     }
 
@@ -384,8 +357,6 @@ class ProtectionPlugin extends ServerPlugin {
             'mtime' => time(),
             'etag' => $newEtag
         ]);
-        
-        error_log("DEBUG_FP: Touched node '" . $node->getName() . "' (new etag: $newEtag)");
     }
 
     public function getPluginName() {

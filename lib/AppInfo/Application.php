@@ -166,7 +166,6 @@ class Application extends App implements IBootstrap {
      * - Regista mensagens de log para debugging.
      */
     public function boot(IBootContext $context): void {
-        error_log("DEBUG_FP: Application boot started for folder_protection");
         $logger = $context->getServerContainer()->get(LoggerInterface::class);
         $logger->info('FolderProtection: Application boot completed', ['app' => self::APP_ID]);
         

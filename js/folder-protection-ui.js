@@ -47,7 +47,7 @@
                 this.setupEventListeners();
                 this.markProtectedFolders(); // Aplicação inicial
                 this.state.initialized = true;
-                console.log('[FolderProtection] ✅ Initialized');
+                this.log('[FolderProtection] ✅ Initialized');
             });
         },
 
@@ -289,6 +289,7 @@
         },
 
         getCurrentDirectory() {
+            // Nextcloud 25-31 usa hash-router: #/?dir=/pasta
             const hash = window.location.hash;
             const match = hash.match(/dir=([^&]*)/);
             return match ? decodeURIComponent(match[1]) : '/';

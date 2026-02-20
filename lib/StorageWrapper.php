@@ -93,12 +93,6 @@ class StorageWrapper extends Wrapper {
     }
 
     public function unlink(string $path): bool {
-        // error_log("DEBUG_FP: StorageWrapper unlink called for path: $path");
-        // if ($this->protectionChecker->isProtected($path)) {
-        //     \OC::$server->get(LoggerInterface::class)->warning("FolderProtection: blocked unlink of protected path: $path");
-        //     $this->sendProtectionNotification($path, 'delete');
-        //     throw new FolderLocked("Deleting protected folders is not allowed");
-        // }
         return $this->storage->unlink($path);
     }
 
@@ -137,11 +131,6 @@ class StorageWrapper extends Wrapper {
     }
 
     public function rmdir(string $path): bool {
-        // if ($this->protectionChecker->isProtected($path)) {
-        //     \OC::$server->get(LoggerInterface::class)->warning("FolderProtection: blocked rmdir of protected folder: $path");
-        //     $this->sendProtectionNotification($path, 'delete');
-        //     throw new FolderLocked("Deleting protected folders is not allowed");
-        // }
         return $this->storage->rmdir($path);
     }
 

@@ -5,6 +5,9 @@ namespace OCA\FolderProtection\Controller;
 
 use OCA\FolderProtection\ProtectionChecker;
 use OCP\AppFramework\Controller;
+use OCP\AppFramework\Http\Attribute\AdminRequired;
+use OCP\AppFramework\Http\Attribute\NoAdminRequired;
+use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
 use OCP\AppFramework\Http\JSONResponse;
 use OCP\IDBConnection;
 use OCP\IRequest;
@@ -12,7 +15,7 @@ use OCP\ICacheFactory;
 use Psr\Log\LoggerInterface;
 
 class AdminController extends Controller {
-    
+
     private IDBConnection $db;
     private ProtectionChecker $protectionChecker;
     private LoggerInterface $logger;
@@ -34,10 +37,10 @@ class AdminController extends Controller {
     }
 
     /**
-     * List all protected folders
-     * @NoCSRFRequired
-     * @NoAdminRequired
+     * List all protected folders (admin only)
      */
+    #[AdminRequired]
+    #[NoCSRFRequired]
     public function list(): JSONResponse {
         try {
             $qb = $this->db->getQueryBuilder();
@@ -47,7 +50,7 @@ class AdminController extends Controller {
 
             $result = $qb->executeQuery();
             $folders = [];
-            
+
             while ($row = $result->fetch()) {
                 $folders[] = [
                     'id' => (int)$row['id'],
@@ -75,16 +78,14 @@ class AdminController extends Controller {
     }
 
     /**
-     * Protect a folder
-     * @NoCSRFRequired
-     * @NoAdminRequired
+     * Protect a folder (admin only)
      */
+    #[AdminRequired]
+    #[NoCSRFRequired]
     public function protect(string $path, ?string $reason = null, ?string $userId = null): JSONResponse {
         try {
-            // Normalize path
             $path = $this->protectionChecker->normalizePath($path);
 
-            // Check if already protected
             if ($this->protectionChecker->isProtected($path)) {
                 return new JSONResponse([
                     'success' => false,
@@ -92,7 +93,6 @@ class AdminController extends Controller {
                 ], 400);
             }
 
-            // Insert into database
             $qb = $this->db->getQueryBuilder();
             $qb->insert('folder_protection')
                ->values([
@@ -104,9 +104,7 @@ class AdminController extends Controller {
                ]);
             $qb->executeStatement();
 
-            // Clear cache
             $this->clearCacheInternal();
-
             $this->logger->info('Protected folder', ['path' => $path, 'user' => $userId]);
 
             return new JSONResponse([
@@ -124,16 +122,16 @@ class AdminController extends Controller {
     }
 
     /**
-     * Unprotect a folder
-     * @NoCSRFRequired
-     * @NoAdminRequired
+     * Unprotect a folder (admin only)
      */
+    #[AdminRequired]
+    #[NoCSRFRequired]
     public function unprotect(int $id): JSONResponse {
         try {
             $qb = $this->db->getQueryBuilder();
             $qb->delete('folder_protection')
                ->where($qb->expr()->eq('id', $qb->createNamedParameter($id)));
-            
+
             $affected = $qb->executeStatement();
 
             if ($affected === 0) {
@@ -143,9 +141,7 @@ class AdminController extends Controller {
                 ], 404);
             }
 
-            // Clear cache
             $this->clearCacheInternal();
-
             $this->logger->info('Unprotected folder', ['id' => $id]);
 
             return new JSONResponse([
@@ -162,10 +158,10 @@ class AdminController extends Controller {
     }
 
     /**
-     * Check if a path is protected
-     * @NoCSRFRequired
-     * @NoAdminRequired
+     * Check if a path is protected (accessible to all users — read-only)
      */
+    #[NoAdminRequired]
+    #[NoCSRFRequired]
     public function check(string $path): JSONResponse {
         try {
             $path = $this->protectionChecker->normalizePath($path);
@@ -186,10 +182,10 @@ class AdminController extends Controller {
     }
 
     /**
-     * Clear protection cache
-     * @NoCSRFRequired
-     * @NoAdminRequired
+     * Clear protection cache (admin only)
      */
+    #[AdminRequired]
+    #[NoCSRFRequired]
     public function clearCache(): JSONResponse {
         try {
             $this->clearCacheInternal();
@@ -212,22 +208,20 @@ class AdminController extends Controller {
         $cache->clear();
     }
 
-
-        /**
-     * Get protection status for folders (for web UI)
-     * @NoCSRFRequired
-     * @NoAdminRequired
+    /**
+     * Get protection status for all folders (accessible to all users — used by UI badges)
      */
+    #[NoAdminRequired]
+    #[NoCSRFRequired]
     public function getFolderStatuses(): JSONResponse {
         try {
-            // Get all protected paths
             $qb = $this->db->getQueryBuilder();
             $qb->select('path', 'reason', 'created_by')
                 ->from('folder_protection');
-            
+
             $result = $qb->executeQuery();
             $protections = [];
-            
+
             while ($row = $result->fetch()) {
                 $protections[$row['path']] = [
                     'protected' => true,
@@ -236,7 +230,7 @@ class AdminController extends Controller {
                 ];
             }
             $result->closeCursor();
-            
+
             return new JSONResponse([
                 'success' => true,
                 'protections' => $protections
@@ -245,7 +239,7 @@ class AdminController extends Controller {
             $this->logger->error('Error getting folder statuses', [
                 'exception' => $e->getMessage()
             ]);
-            
+
             return new JSONResponse([
                 'success' => false,
                 'message' => $e->getMessage()

@@ -33,8 +33,6 @@ class SabrePluginListener implements IEventListener {
         if (!($event instanceof SabrePluginAuthInitEvent)) {
             return;
         }
-        error_log("DEBUG_FP: SabrePluginListener handle called - Adding plugins to DAV server");
-
         $this->logger->info('FolderProtection: SabrePluginAuthInitEvent received, adding WebDAV plugins');
 
         try {
