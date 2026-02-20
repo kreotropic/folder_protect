@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace OCA\FolderProtection\Migration;
@@ -10,12 +11,15 @@ use OCP\Migration\IOutput;
 use OCP\Migration\SimpleMigrationStep;
 
 /**
- * Canonical migration representing the current schema used in production.
+ * "Version 2" canonical migration used by branch "clean".
  *
- * Creates `folder_protection` table with the superset of columns observed
- * in existing installations (including file_id, user_id, created_by, reason).
+ * This single step replaces the earlier numbered migrations (1–4) and
+ * always creates the table with the full production schema. New installs
+ * only ever run this file; existing installations can be cleaned by
+ * removing the old rows from `oc_migrations` or allowing them to remain
+ * once the database has been reset.
  */
-class Version003000000Date20251126000000 extends SimpleMigrationStep {
+class Version002000000Date20260220000000 extends SimpleMigrationStep {
 
     public function changeSchema(IOutput $output, Closure $schemaClosure, array $options): ?ISchemaWrapper {
         /** @var ISchemaWrapper $schema */
@@ -62,11 +66,14 @@ class Version003000000Date20251126000000 extends SimpleMigrationStep {
             ]);
 
             $table->setPrimaryKey(['id']);
-            $table->addUniqueIndex(['path'], 'folder_protection_path_idx');
-            $table->addIndex(['file_id'], 'folder_protection_file_id_idx');
+            // shorter index names to stay under MySQL 64‑char limit once prefixed
+            $table->addUniqueIndex(['path'], 'fp_path_idx');
+            $table->addIndex(['file_id'], 'fp_file_id_idx');
+            $table->addIndex(['created_at'], 'fp_created_idx');
+
+            $output->info('Created folder_protection table (version 2 schema)');
         }
 
         return $schema;
     }
-
 }
