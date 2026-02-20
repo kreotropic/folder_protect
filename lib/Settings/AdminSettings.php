@@ -19,7 +19,7 @@ class AdminSettings implements ISettings {
      * @return string the section ID, e.g. 'sharing'
      */
     public function getSection(): string {
-        return 'additional';
+        return 'folder_protection';
     }
 
     /**
