@@ -26,6 +26,9 @@ class ProtectionPropertyPlugin extends ServerPlugin {
     const PROP_IS_RENAMEABLE = '{http://nextcloud.org/ns}is-renameable';
     const PROP_IS_MOVEABLE = '{http://nextcloud.org/ns}is-moveable';
 
+    // Propriedade OwnCloud de permissões — lida pelo cliente desktop para decidir operações
+    const PROP_OC_PERMISSIONS = '{http://owncloud.org/ns}permissions';
+
     public function __construct(
         ProtectionChecker $protectionChecker,
         LoggerInterface $logger
@@ -39,8 +42,10 @@ class ProtectionPropertyPlugin extends ServerPlugin {
      */
     public function initialize(\Sabre\DAV\Server $server): void {
         $this->server = $server;
-        $server->on('propFind', [$this, 'propFind']);
-        
+        // Prioridade 150: corre DEPOIS do FilesPlugin do core (prioridade 100 default)
+        // para podermos ler e sobrepor oc:permissions já calculado pelo core
+        $server->on('propFind', [$this, 'propFind'], 150);
+
         $this->logger->debug('FolderProtection: ProtectionPropertyPlugin initialized');
     }
 
@@ -48,14 +53,14 @@ class ProtectionPropertyPlugin extends ServerPlugin {
      * Handler para PROPFIND - adiciona propriedades customizadas
      */
     public function propFind(PropFind $propFind, INode $node): void {
+        $path = $this->getNodePath($node);
+
         // Só aplicar a ficheiros e diretórios do Nextcloud
         if (!($node instanceof \OCA\DAV\Connector\Sabre\Directory) && 
             !($node instanceof \OCA\DAV\Connector\Sabre\File)) {
             return;
         }
 
-        $path = $this->getNodePath($node);
-        
         // Se não conseguimos determinar o path, skip
         if (empty($path)) {
             return;
@@ -89,6 +94,18 @@ class ProtectionPropertyPlugin extends ServerPlugin {
         $propFind->handle(self::PROP_IS_MOVEABLE, function() use ($isProtected) {
             return $isProtected ? 'false' : 'true';
         });
+
+        // 4. Remover 'D' (delete) das permissões OwnCloud para pastas protegidas.
+        // O cliente desktop Nextcloud lê oc:permissions e só tenta DELETE se 'D' estiver presente.
+        // Corremos com prioridade 150 (depois do FilesPlugin a 100) para poder sobrepor o valor.
+        if ($isProtected) {
+            $currentPerms = $propFind->get(self::PROP_OC_PERMISSIONS);
+            if (is_string($currentPerms) && str_contains($currentPerms, 'D')) {
+                $newPerms = str_replace('D', '', $currentPerms);
+                $propFind->set(self::PROP_OC_PERMISSIONS, $newPerms);
+                $this->logger->debug("FolderProtection: Removed 'D' from oc:permissions for '$path': '$currentPerms' → '$newPerms'");
+            }
+        }
     }
 
     /**

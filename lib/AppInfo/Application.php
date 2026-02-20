@@ -6,6 +6,9 @@ namespace OCA\FolderProtection\AppInfo;
 use OC\Files\Filesystem;
 use OCA\FolderProtection\ProtectionChecker;
 use OCA\FolderProtection\StorageWrapper;
+use OCA\FolderProtection\DAV\ProtectionPlugin;
+use OCA\FolderProtection\DAV\ProtectionPropertyPlugin;
+use OCA\FolderProtection\DAV\LockPlugin;
 use OCA\FolderProtection\Listener\SabrePluginListener;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootstrap;
@@ -67,6 +70,30 @@ class Application extends App implements IBootstrap {
             return new ProtectionChecker(
                 $c->get(\OCP\IDBConnection::class),
                 $c->get(\OCP\ICacheFactory::class)
+            );
+        });
+
+        // Regista o ProtectionPlugin (Lógica DAV)
+        $context->registerService(ProtectionPlugin::class, function ($c) {
+            return new ProtectionPlugin(
+                $c->get(ProtectionChecker::class),
+                $c->get(LoggerInterface::class)
+            );
+        });
+
+        // Regista o ProtectionPropertyPlugin (Propriedades DAV)
+        $context->registerService(ProtectionPropertyPlugin::class, function ($c) {
+            return new ProtectionPropertyPlugin(
+                $c->get(ProtectionChecker::class),
+                $c->get(LoggerInterface::class)
+            );
+        });
+
+        // Regista o LockPlugin (Gerência automática de locks WebDAV)
+        $context->registerService(LockPlugin::class, function ($c) {
+            return new LockPlugin(
+                $c->get(ProtectionChecker::class),
+                $c->get(LoggerInterface::class)
             );
         });
 
@@ -133,6 +160,7 @@ class Application extends App implements IBootstrap {
      * - Regista mensagens de log para debugging.
      */
     public function boot(IBootContext $context): void {
+        error_log("DEBUG_FP: Application boot started for folder_protection");
         $logger = $context->getServerContainer()->get(LoggerInterface::class);
         $logger->info('FolderProtection: Application boot completed', ['app' => self::APP_ID]);
         
@@ -150,7 +178,6 @@ class Application extends App implements IBootstrap {
      * @internal
      */
     public function addStorageWrapper(): void {
-        error_log("FolderProtection: addStorageWrapper() called via hook");
         // Adiciona wrapper com prioridade negativa (prioritário)
         Filesystem::addStorageWrapper('folder_protection', [$this, 'addStorageWrapperCallback'], -10);
     }
@@ -166,8 +193,6 @@ class Application extends App implements IBootstrap {
      * @internal
      */
     public function addStorageWrapperCallback(string $mountPoint, IStorage $storage): IStorage {
-        error_log("FolderProtection: wrapper callback for mountPoint: $mountPoint");
-
         // Só aplica o wrapper se não estamos em CLI e não é a raiz
         if (!OC::$CLI && $mountPoint !== '/') {
             $protectionChecker = $this->getContainer()->get(ProtectionChecker::class);

@@ -5,48 +5,55 @@ namespace OCA\FolderProtection\Listener;
 
 use OCA\DAV\Events\SabrePluginAuthInitEvent;
 use OCA\FolderProtection\DAV\ProtectionPlugin;
-use OCA\FolderProtection\ProtectionChecker;
-use OCA\FolderProtection\DAV\ProtectionPropertyPlugin; 
+use OCA\FolderProtection\DAV\ProtectionPropertyPlugin;
+use OCA\FolderProtection\DAV\LockPlugin;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
 use Psr\Log\LoggerInterface;
 
 class SabrePluginListener implements IEventListener {
-    private ProtectionChecker $protectionChecker;
+    private ProtectionPlugin $protectionPlugin;
+    private ProtectionPropertyPlugin $propertyPlugin;
+    private LockPlugin $lockPlugin;
     private LoggerInterface $logger;
 
     public function __construct(
-        ProtectionChecker $protectionChecker,
+        ProtectionPlugin $protectionPlugin,
+        ProtectionPropertyPlugin $propertyPlugin,
+        LockPlugin $lockPlugin,
         LoggerInterface $logger
     ) {
-        $this->protectionChecker = $protectionChecker;
+        $this->protectionPlugin = $protectionPlugin;
+        $this->propertyPlugin = $propertyPlugin;
+        $this->lockPlugin = $lockPlugin;
         $this->logger = $logger;
     }
 
-public function handle(Event $event): void {
-    if (!($event instanceof SabrePluginAuthInitEvent)) {
-        return;
-    }
+    public function handle(Event $event): void {
+        if (!($event instanceof SabrePluginAuthInitEvent)) {
+            return;
+        }
+        error_log("DEBUG_FP: SabrePluginListener handle called - Adding plugins to DAV server");
 
-    $this->logger->info('FolderProtection: SabrePluginAuthInitEvent received, adding WebDAV plugins');
+        $this->logger->info('FolderProtection: SabrePluginAuthInitEvent received, adding WebDAV plugins');
 
-    try {
-        $server = $event->getServer();
-        
-        // Plugin 1: Bloqueia operações (JÁ EXISTIA)
-        $protectionPlugin = new ProtectionPlugin($this->protectionChecker, $this->logger);
-        $server->addPlugin($protectionPlugin);
-        
-        // Plugin 2: Responde a PROPFIND (NOVO)
-        $propertyPlugin = new ProtectionPropertyPlugin($this->protectionChecker, $this->logger);
-        $server->addPlugin($propertyPlugin);
-        
-        $this->logger->info('FolderProtection: Both WebDAV plugins added successfully (Protection + Properties)');
-    } catch (\Exception $e) {
-        $this->logger->error('FolderProtection: Failed to add WebDAV plugins', [
-            'exception' => $e->getMessage(),
-            'trace' => $e->getTraceAsString()
-        ]);
+        try {
+            $server = $event->getServer();
+
+            // Adiciona os três plugins em ordem de prioridade:
+            // 1. LockPlugin - Gerencia locks automáticos (prioridade mais alta)
+            // 2. ProtectionPlugin - Bloqueia operações inválidas  
+            // 3. ProtectionPropertyPlugin - Reporta propriedades ao cliente
+            $server->addPlugin($this->lockPlugin);
+            $server->addPlugin($this->protectionPlugin);
+            $server->addPlugin($this->propertyPlugin);
+
+            $this->logger->info('FolderProtection: All WebDAV plugins added successfully (Lock + Protection + Properties)');
+        } catch (\Exception $e) {
+            $this->logger->error('FolderProtection: Failed to add WebDAV plugins', [
+                'exception' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
     }
-}
 }

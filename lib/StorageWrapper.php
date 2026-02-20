@@ -1,6 +1,7 @@
 <?php
 namespace OCA\FolderProtection;
 
+use OCA\FolderProtection\DAV\FolderLocked;
 use OCP\Files\NotPermittedException;
 use OC\Files\Storage\Wrapper\Wrapper;
 use Psr\Log\LoggerInterface;
@@ -49,7 +50,7 @@ class StorageWrapper extends Wrapper {
     }
 
     public function __call($method, $args) {
-        error_log("FolderProtection: UNKNOWN method called: $method with args: " . json_encode($args));
+        // Delega silenciosamente métodos desconhecidos para o storage original
         return call_user_func_array([$this->storage, $method], $args);
     }
 
@@ -74,10 +75,10 @@ class StorageWrapper extends Wrapper {
     public function copy($source, $target): bool {
         if ($this->protectionChecker->isProtected($source)) {
             $this->sendProtectionNotification($source, 'copy');
-            throw new NotPermittedException('This folder is protected and cannot be copied.', false);
+            throw new FolderLocked('This folder is protected and cannot be copied.', false);
         }
         if ($this->protectionChecker->isAnyProtectedWithBasename(basename($target))) {
-            throw new NotPermittedException('Cannot create folders with protected names.', false);
+            throw new FolderLocked('Cannot create folders with protected names.', false);
         }
         return $this->storage->copy($source, $target);
     }
@@ -86,24 +87,25 @@ class StorageWrapper extends Wrapper {
         if ($this->protectionChecker->isProtected($source)) {
             \OC::$server->get(LoggerInterface::class)->warning("FolderProtection: blocked rename/move of protected folder: $source");
             $this->sendProtectionNotification($source, 'move');
-            throw new NotPermittedException("Moving protected folders is not allowed");
+            throw new FolderLocked("Moving protected folders is not allowed");
         }
         return $this->storage->rename($source, $target);
     }
 
     public function unlink(string $path): bool {
-        if ($this->protectionChecker->isProtected($path)) {
-            \OC::$server->get(LoggerInterface::class)->warning("FolderProtection: blocked unlink of protected path: $path");
-            $this->sendProtectionNotification($path, 'delete');
-            throw new NotPermittedException("Deleting protected folders is not allowed");
-        }
+        // error_log("DEBUG_FP: StorageWrapper unlink called for path: $path");
+        // if ($this->protectionChecker->isProtected($path)) {
+        //     \OC::$server->get(LoggerInterface::class)->warning("FolderProtection: blocked unlink of protected path: $path");
+        //     $this->sendProtectionNotification($path, 'delete');
+        //     throw new FolderLocked("Deleting protected folders is not allowed");
+        // }
         return $this->storage->unlink($path);
     }
 
     public function copyFromStorage(\OCP\Files\Storage\IStorage $sourceStorage, string $sourceInternalPath, string $targetInternalPath): bool {
         if (!empty($sourceInternalPath) && $this->protectionChecker->isProtected($sourceInternalPath)) {
             $this->sendProtectionNotification($sourceInternalPath, 'copy');
-            throw new NotPermittedException('This folder is protected and cannot be copied.', false);
+            throw new FolderLocked('This folder is protected and cannot be copied.', false);
         }
 
         if (method_exists($sourceStorage, 'getFolderId')) {
@@ -111,16 +113,16 @@ class StorageWrapper extends Wrapper {
             $groupFolderPath = "/__groupfolders/$folderId";
             if ($this->protectionChecker->isProtectedOrParentProtected($groupFolderPath)) {
                 $this->sendProtectionNotification($groupFolderPath, 'copy');
-                throw new NotPermittedException('This group folder is protected and cannot be copied.', false);
+                throw new FolderLocked('This group folder is protected and cannot be copied.', false);
             }
         }
 
         if ($this->protectionChecker->isProtected($targetInternalPath)) {
-            throw new NotPermittedException('Cannot copy into protected folders.', false);
+            throw new FolderLocked('Cannot copy into protected folders.', false);
         }
 
         if ($this->protectionChecker->isAnyProtectedWithBasename(basename($targetInternalPath))) {
-            throw new NotPermittedException('Cannot create folders with protected names.', false);
+            throw new FolderLocked('Cannot create folders with protected names.', false);
         }
 
         return parent::copyFromStorage($sourceStorage, $sourceInternalPath, $targetInternalPath);
@@ -129,17 +131,17 @@ class StorageWrapper extends Wrapper {
     public function moveFromStorage(\OCP\Files\Storage\IStorage $sourceStorage, string $sourceInternalPath, string $targetInternalPath): bool {
         if ($this->protectionChecker->isProtected($sourceInternalPath)) {
             $this->sendProtectionNotification($sourceInternalPath, 'move');
-            throw new NotPermittedException('This folder is protected and cannot be moved.', false);
+            throw new FolderLocked('This folder is protected and cannot be moved.', false);
         }
         return parent::moveFromStorage($sourceStorage, $sourceInternalPath, $targetInternalPath);
     }
 
     public function rmdir(string $path): bool {
-        if ($this->protectionChecker->isProtected($path)) {
-            \OC::$server->get(LoggerInterface::class)->warning("FolderProtection: blocked rmdir of protected folder: $path");
-            $this->sendProtectionNotification($path, 'delete');
-            throw new NotPermittedException("Deleting protected folders is not allowed");
-        }
+        // if ($this->protectionChecker->isProtected($path)) {
+        //     \OC::$server->get(LoggerInterface::class)->warning("FolderProtection: blocked rmdir of protected folder: $path");
+        //     $this->sendProtectionNotification($path, 'delete');
+        //     throw new FolderLocked("Deleting protected folders is not allowed");
+        // }
         return $this->storage->rmdir($path);
     }
 
@@ -157,10 +159,10 @@ class StorageWrapper extends Wrapper {
     public function mkdir(string $path): bool {
         if ($this->protectionChecker->isProtected($path)) {
             $this->sendProtectionNotification($path, 'create');
-            throw new NotPermittedException('Cannot create directory: target is protected or inside a protected folder.', false);
+            throw new FolderLocked('Cannot create directory: target is protected or inside a protected folder.', false);
         }
         if ($this->protectionChecker->isAnyProtectedWithBasename(basename($path))) {
-            throw new NotPermittedException('Cannot create directory with this name because a protected folder exists.', false);
+            throw new FolderLocked('Cannot create directory with this name because a protected folder exists.', false);
         }
         return $this->storage->mkdir($path);
     }
