@@ -29,5 +29,9 @@ gemini_worklog.md
 DEV_CHANGELOG.md
 manual_curl_test.sh
 test_etag.sh
+memory/
+
+# build/signing output
+appinfo/signature.json
 
 /vendor/
