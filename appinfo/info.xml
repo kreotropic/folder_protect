@@ -7,7 +7,7 @@
     <description>Prevents specific folders from being moved, copied, or deleted to avoid server performance issues with large folders.</description>
     <version>2.0.0</version>
     <licence>agpl</licence>
-    <author mail="ricardo.jofebar@gmail.com">Ricardo Ferreira</author>
+    <author mail="rsfneg@gmail.com">Ricardo Ferreira</author>
     <namespace>FolderProtection</namespace>
     <category>files</category>
     

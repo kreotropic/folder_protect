@@ -77,4 +77,4 @@ Pull requests welcome! Please open an issue first to discuss significant changes
 
 ## Author
 
-Ricardo Ferreira — JOFEBAR
+Ricardo Ferreira
