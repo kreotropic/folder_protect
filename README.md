@@ -26,7 +26,7 @@ When users move 300GB+ folders, Nextcloud servers can crash or become unresponsi
 ### Manual Installation
 ```bash
 cd /path/to/nextcloud/custom_apps
-git clone https://github.com/kreotropic/folder_protect.git folder_protection
+git clone https://github.com/kreotropic/folder_protection.git folder_protection
 cd folder_protection
 npm install
 npm run build
@@ -84,7 +84,7 @@ picked up by the App Store crawler to showcase the app.*
 
 ## Support
 
-- Issues: [GitHub Issues](https://github.com/kreotropic/folder_protect/issues)
+- Issues: [GitHub Issues](https://github.com/kreotropic/folder_protection/issues)
 - Forum: [Nextcloud Community](https://help.nextcloud.com)
 
 ## Author
