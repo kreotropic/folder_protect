@@ -68,6 +68,20 @@ class AdminController extends Controller {
             }
             $result->closeCursor();
 
+            // annotate groupfolders with their visible mountPoint if available
+            if ($this->appManager->isInstalled('groupfolders')) {
+                $mountPoints = $this->fetchGroupFolderMountPoints();
+                foreach ($folders as &$folder) {
+                    if (preg_match('#^/__groupfolders/(\d+)(/.*)?$#', $folder['path'], $m)) {
+                        $id = (int)$m[1];
+                        if (isset($mountPoints[$id])) {
+                            $folder['mountPoint'] = $mountPoints[$id];
+                        }
+                    }
+                }
+                unset($folder);
+            }
+
             return new JSONResponse([
                 'success' => true,
                 'folders' => $folders

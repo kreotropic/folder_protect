@@ -20,7 +20,15 @@
             <div v-for="folder in folders" :key="folder.id" class="folder-item">
                 <div class="folder-icon">📁</div>
                 <div class="folder-details">
-                    <div class="folder-path">{{ folder.path }}</div>
+                    <div class="folder-path">
+                        <template v-if="folder.mountPoint">
+                            <strong class="folder-mount">{{ folder.mountPoint }}</strong>
+                            <div class="folder-internal">{{ folder.path }}</div>
+                        </template>
+                        <template v-else>
+                            {{ folder.path }}
+                        </template>
+                    </div>
                     <div class="folder-meta">
                         <span v-if="folder.created_by">
                             {{ t('folder_protection', 'Created by') }}: {{ folder.created_by }}
@@ -424,6 +432,16 @@ export default {
 .folder-path {
     font-weight: bold;
     margin-bottom: 5px;
+}
+
+.folder-mount {
+    display: block;
+    font-weight: var(--font-weight-bold);
+}
+.folder-internal {
+    font-size: 0.9em;
+    color: var(--color-text-lighter);
+    word-break: break-all;
 }
 
 .folder-meta {

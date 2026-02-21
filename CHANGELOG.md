@@ -13,6 +13,7 @@
 - Desktop sync recovery: on a blocked DELETE or MOVE, the server updates the node's ETag and mtime so the sync client detects the server state as "newer" and restores the folder instead of showing a permanent sync error
 - Database migrations consolidated from versions 1–4 into a single clean migration (Version 2); existing installations are not affected
 - App version bumped to 2.0.0
+- Admin list now shows the *visible* mount point name alongside internal `/__groupfolders/N` paths, making it easier to remember which folder is which
 
 ### Fixed
 - Group folder path detection in ProtectionPlugin and ProtectionPropertyPlugin: DAV nodes backed by a group folder storage are now correctly resolved to `__groupfolders/N` by traversing the storage wrapper chain via `getWrapperStorage()` / `getFolderId()`
