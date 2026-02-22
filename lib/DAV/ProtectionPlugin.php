@@ -192,15 +192,16 @@ class ProtectionPlugin extends ServerPlugin {
 
             foreach ($this->buildPathsToCheck($path) as $candidate) {
                 if ($this->protectionChecker->isAnyProtectedWithBasename(basename($candidate))) {
+                    $folderName = basename($uri);
                     $this->logger->warning("FolderProtection DAV: Blocking bind in protected path: $candidate");
                     // Must throw an exception — returning false from beforeBind causes Sabre to
                     // still send 201, which confuses the desktop client into infinite retry loops.
                     // Sabre\DAV\Exception\Forbidden returns 403 with our message in <s:message>,
-                    // which the desktop client can display as a meaningful error.
+                    // which the desktop client displays in the "Not Synced" activity panel.
                     $this->touchAncestors($uri);
-                    $this->setHeaders('create', 'Cannot create folders with protected names');
+                    $this->setHeaders('create', "The folder '$folderName' is protected");
                     $this->sendProtectionNotification($candidate, 'create');
-                    throw new \Sabre\DAV\Exception\Forbidden('This folder name is protected and cannot be created here.');
+                    throw new \Sabre\DAV\Exception\Forbidden("The folder '$folderName' is protected and cannot be created here.");
                 }
             }
         } catch (\Throwable $e) {
@@ -226,9 +227,10 @@ class ProtectionPlugin extends ServerPlugin {
                         $reason = (string)$info['reason'];
                     }
 
-                    $this->setHeaders('delete', $reason);
+                    $folderName = basename($uri); // usar nome visível (não o path interno que pode ser '__groupfolders/N')
+                    $this->setHeaders('delete', "The folder '$folderName' is protected: $reason");
                     $this->sendProtectionNotification($candidate, 'delete');
-                    $this->sendErrorResponse(403, "🛡️ FOLDER PROTECTED: $reason");
+                    $this->sendErrorResponse(403, "The folder '$folderName' is protected: $reason");
                     return false;
                 }
             }
@@ -255,9 +257,10 @@ class ProtectionPlugin extends ServerPlugin {
                         $reason = (string)$info['reason'];
                     }
 
-                    $this->setHeaders('move', $reason);
+                    $folderName = basename($sourcePath); // usar nome visível (não o path interno que pode ser '__groupfolders/N')
+                    $this->setHeaders('move', "The folder '$folderName' is protected: $reason");
                     $this->sendProtectionNotification($candidate, 'move');
-                    $this->sendErrorResponse(403, "🛡️ FOLDER PROTECTED: $reason");
+                    $this->sendErrorResponse(403, "The folder '$folderName' is protected: $reason");
                     return false;
                 }
             }
@@ -268,11 +271,12 @@ class ProtectionPlugin extends ServerPlugin {
             $dst = $this->getInternalPath($destinationPath);
             foreach ($this->buildPathsToCheck($dst) as $destCandidate) {
                 if ($this->protectionChecker->isAnyProtectedWithBasename(basename($destCandidate))) {
+                    $destName = basename($destinationPath);
                     $this->logger->warning("FolderProtection DAV: Blocking rename to protected name: $destCandidate (src: $src)");
                     // Delete the empty stepping-stone folder from the server so it does not become orphaned.
                     $this->deleteEmptyNode($sourcePath);
-                    $this->setHeaders('move', 'Cannot rename to a protected folder name');
-                    throw new \Sabre\DAV\Exception\Forbidden('This folder name is protected and cannot be used here.');
+                    $this->setHeaders('move', "Cannot rename to '$destName': folder name is protected");
+                    throw new \Sabre\DAV\Exception\Forbidden("Cannot rename to '$destName': this folder name is protected.");
                 }
             }
         } catch (\Throwable $e) {
