@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.0.1] - 2026-02-22
+
+### Fixed
+- DELETE and MOVE operations on regular (non-group) folders are now correctly blocked; previously these were registered in `beforeMethod` which fires too late in the Sabre event lifecycle — moved to `beforeUnbind` / `beforeMove`
+- MKCOL blocked operations now correctly return **403 Forbidden** instead of **201 Created**; the old `sendErrorResponse(403) + return false` pattern in `beforeBind` was overridden by Sabre's internal response setter — fixed by throwing `Sabre\DAV\Exception\Forbidden`
+- Desktop client rename-bypass via stepping-stone folder (MKCOL with neutral name + MOVE to protected name) is now blocked; the orphaned stepping-stone folder is automatically deleted from the server
+- ETag changes now propagate up to all ancestor directories after a blocked MKCOL so the sync client re-lists parent folders and discards its local-only copy
+- `ProtectionChecker::getProtectionInfo()` cache now correctly stores a sentinel for "not found" entries (avoids repeated DB queries for unprotected paths)
+- `AdminController::protect()` now reads `userId` from the server-side `IUserSession` instead of trusting a client-supplied parameter
+- `Notifier` class moved to correct namespace `OCA\FolderProtection\Notification` (was `OCA\FolderProtection\DAV`)
+- Removed dead `OperationForbidden` exception class and unused `getCommands()` method
+- `LockPlugin::getInternalPath()` no longer checks the parent directory name (causing false positives)
+- `AdminApp.vue` add-protection modal now resets to the Group Folders tab when reopened
+
+---
+
 ## [2.0.0] - 2026-02-20
 
 ### Added
