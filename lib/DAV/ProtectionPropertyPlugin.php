@@ -95,15 +95,20 @@ class ProtectionPropertyPlugin extends ServerPlugin {
             return $isProtected ? 'false' : 'true';
         });
 
-        // 4. Remover 'D' (delete) das permissões OwnCloud para pastas protegidas.
-        // O cliente desktop Nextcloud lê oc:permissions e só tenta DELETE se 'D' estiver presente.
+        // 4. Remover 'D' (delete), 'N' (rename) e 'V' (move) das permissões OwnCloud para pastas protegidas.
+        // O cliente desktop lê oc:permissions antes de tentar qualquer operação:
+        //   'D' ausente → não tenta DELETE
+        //   'N' ausente → não tenta rename (evita o fallback copy-then-delete)
+        //   'V' ausente → não tenta MOVE para outra localização
         // Corremos com prioridade 150 (depois do FilesPlugin a 100) para poder sobrepor o valor.
         if ($isProtected) {
             $currentPerms = $propFind->get(self::PROP_OC_PERMISSIONS);
-            if (is_string($currentPerms) && str_contains($currentPerms, 'D')) {
-                $newPerms = str_replace('D', '', $currentPerms);
-                $propFind->set(self::PROP_OC_PERMISSIONS, $newPerms);
-                $this->logger->debug("FolderProtection: Removed 'D' from oc:permissions for '$path': '$currentPerms' → '$newPerms'");
+            if (is_string($currentPerms)) {
+                $newPerms = str_replace(['D', 'N', 'V'], '', $currentPerms);
+                if ($newPerms !== $currentPerms) {
+                    $propFind->set(self::PROP_OC_PERMISSIONS, $newPerms);
+                    $this->logger->debug("FolderProtection: Restricted oc:permissions for '$path': '$currentPerms' → '$newPerms'");
+                }
             }
         }
     }
