@@ -193,15 +193,23 @@ class ProtectionPlugin extends ServerPlugin {
             foreach ($this->buildPathsToCheck($path) as $candidate) {
                 if ($this->protectionChecker->isAnyProtectedWithBasename(basename($candidate))) {
                     $this->logger->warning("FolderProtection DAV: Blocking bind in protected path: $candidate");
-                    $this->setHeaders('create', 'Cannot create items in protected folders');
+                    // Touch the parent directory so the desktop client re-lists it and
+                    // removes the local copy it created before the server rejected the MKCOL.
+                    // Use 403 (not 423) so the client treats it as permanent and cleans up.
+                    $parentUri = dirname($uri);
+                    if ($parentUri && $parentUri !== '.' && $parentUri !== $uri) {
+                        $this->touchProtectedNode($parentUri);
+                    }
+                    $this->setHeaders('create', 'Cannot create folders with protected names');
                     $this->sendProtectionNotification($candidate, 'create');
-                    throw new FolderLocked('Cannot create items in protected folders');
+                    $this->sendErrorResponse(403, '🛡️ FOLDER PROTECTED: Cannot create folders with protected names');
+                    return false;
                 }
             }
         } catch (\Throwable $e) {
-            if ($e instanceof FolderLocked) throw $e;
             $this->logger->error("FolderProtection DAV: Error in beforeBind: " . $e->getMessage());
-            throw new FolderLocked('Internal server error during protection check.');
+            $this->sendErrorResponse(403, 'Protection check failed');
+            return false;
         }
     }
 
@@ -239,6 +247,7 @@ class ProtectionPlugin extends ServerPlugin {
             $src = $this->getInternalPath($sourcePath);
             $pathsToCheck = $this->buildPathsToCheck($src);
 
+            // Block if SOURCE is a protected folder
             foreach ($pathsToCheck as $candidate) {
                 if ($this->protectionChecker->isProtected($candidate)) {
                     $this->touchProtectedNode($sourcePath);
@@ -255,10 +264,41 @@ class ProtectionPlugin extends ServerPlugin {
                     return false;
                 }
             }
+
+            // Block if DESTINATION has a protected name (prevents "create temp folder + rename" bypass).
+            // When the client creates an empty stepping-stone folder and then renames it to a protected
+            // name, we block the rename here and also delete the now-orphaned source folder.
+            $dst = $this->getInternalPath($destinationPath);
+            foreach ($this->buildPathsToCheck($dst) as $destCandidate) {
+                if ($this->protectionChecker->isAnyProtectedWithBasename(basename($destCandidate))) {
+                    $this->logger->warning("FolderProtection DAV: Blocking rename to protected name: $destCandidate (src: $src)");
+                    // Delete the empty stepping-stone folder from the server so it does not become orphaned.
+                    $this->deleteEmptyNode($sourcePath);
+                    $this->setHeaders('move', 'Cannot rename to a protected folder name');
+                    $this->sendErrorResponse(403, '🛡️ FOLDER PROTECTED: Cannot rename to a protected folder name');
+                    return false;
+                }
+            }
         } catch (\Throwable $e) {
             $this->logger->error("FolderProtection DAV: Error in beforeMove: " . $e->getMessage());
             $this->sendErrorResponse(403, 'Protection check failed');
             return false;
+        }
+    }
+
+    /**
+     * Delete a node if it exists and is an empty collection.
+     * Used to clean up stepping-stone folders created by the client before a blocked rename.
+     */
+    private function deleteEmptyNode(string $uri): void {
+        try {
+            $node = $this->server->tree->getNodeForPath($uri);
+            if ($node instanceof \Sabre\DAV\ICollection && empty($node->getChildren())) {
+                $node->delete();
+                $this->logger->info("FolderProtection DAV: Deleted empty stepping-stone folder: $uri");
+            }
+        } catch (\Exception $e) {
+            $this->logger->debug("FolderProtection DAV: Could not delete stepping-stone '$uri': " . $e->getMessage());
         }
     }
 
