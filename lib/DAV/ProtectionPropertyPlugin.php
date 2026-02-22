@@ -95,20 +95,20 @@ class ProtectionPropertyPlugin extends ServerPlugin {
             return $isProtected ? 'false' : 'true';
         });
 
-        // 4. Remover 'D' (delete), 'N' (rename) e 'V' (move) das permissões OwnCloud para pastas protegidas.
+        // 4. Remover apenas 'D' (delete) das permissões OwnCloud para pastas protegidas.
         // O cliente desktop lê oc:permissions antes de tentar qualquer operação:
-        //   'D' ausente → não tenta DELETE
-        //   'N' ausente → não tenta rename (evita o fallback copy-then-delete)
-        //   'V' ausente → não tenta MOVE para outra localização
+        //   'D' ausente → não tenta DELETE silenciosamente (evita que a pasta desapareça localmente)
+        //   'V' e 'N' MANTIDOS → o cliente ainda tenta MOVE/rename → o servidor bloqueia com 403
+        //     → o cliente mostra "The folder 'X' is protected" no painel "Not Synced" com o nome da pasta
+        // NOTA: o bypass via MKCOL "temp" + MOVE está protegido em beforeBind/beforeMove, pelo que
+        //       não é necessário remover 'N' para bloquear essa técnica.
         // Corremos com prioridade 150 (depois do FilesPlugin a 100) para poder sobrepor o valor.
         if ($isProtected) {
             $currentPerms = $propFind->get(self::PROP_OC_PERMISSIONS);
-            if (is_string($currentPerms)) {
-                $newPerms = str_replace(['D', 'N', 'V'], '', $currentPerms);
-                if ($newPerms !== $currentPerms) {
-                    $propFind->set(self::PROP_OC_PERMISSIONS, $newPerms);
-                    $this->logger->debug("FolderProtection: Restricted oc:permissions for '$path': '$currentPerms' → '$newPerms'");
-                }
+            if (is_string($currentPerms) && strpos($currentPerms, 'D') !== false) {
+                $newPerms = str_replace('D', '', $currentPerms);
+                $propFind->set(self::PROP_OC_PERMISSIONS, $newPerms);
+                $this->logger->debug("FolderProtection: Removed D from oc:permissions for '$path': '$currentPerms' → '$newPerms'");
             }
         }
     }

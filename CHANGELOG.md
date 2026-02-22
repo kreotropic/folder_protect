@@ -13,6 +13,8 @@
 - Removed dead `OperationForbidden` exception class and unused `getCommands()` method
 - `LockPlugin::getInternalPath()` no longer checks the parent directory name (causing false positives)
 - `AdminApp.vue` add-protection modal now resets to the Group Folders tab when reopened
+- `oc:permissions` now removes only `D` (delete); `V` (move/rename) is kept so the desktop client attempts those operations, receives a 403 with the folder name, and shows it in the "Not Synced" activity panel — restores the folder-name feedback that was lost when `V` was also stripped
+- DAV error messages now include the visible folder name (e.g. "The folder 'novo_teste' is protected") instead of generic text
 
 ---
 
