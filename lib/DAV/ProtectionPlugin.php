@@ -3,7 +3,6 @@ namespace OCA\FolderProtection\DAV;
 
 use OCA\DAV\Connector\Sabre\Node;
 use OCA\FolderProtection\ProtectionChecker;
-use OCP\IL10N;
 use Sabre\DAV\Server;
 use Sabre\DAV\ServerPlugin;
 use Sabre\DAV\Exception;
@@ -21,17 +20,12 @@ class FolderLocked extends Exception {
 }
 
 /**
- * Exceção personalizada para retornar 403 Forbidden com mensagem customizada.
- *
- * Ao usar esta classe em vez de Sabre\DAV\Exception\Forbidden, o <s:exception>
- * no XML de erro será "OCA\FolderProtection\DAV\FolderProtected" — um valor que
- * o cliente Nextcloud desktop não reconhece — forçando-o a usar <s:message>
- * (que contém a nossa mensagem personalizada) em vez da string hardcoded
- * "You don't have access to this resource."
+ * Exceção para operações proibidas (DELETE, MOVE) que devem retornar 403.
+ * Isto é mais forte que 423 e previne que clientes apaguem ficheiros localmente.
  */
-class FolderProtected extends Exception {
+class OperationForbidden extends Exception {
     public function getHTTPCode() {
-        return 403;
+        return 403; // Forbidden
     }
 }
 
@@ -40,12 +34,10 @@ class ProtectionPlugin extends ServerPlugin {
     private $protectionChecker;
     private $logger;
     private $server;
-    private IL10N $l10n;
 
-    public function __construct(ProtectionChecker $protectionChecker, LoggerInterface $logger, IL10N $l10n) {
+    public function __construct(ProtectionChecker $protectionChecker, LoggerInterface $logger) {
         $this->protectionChecker = $protectionChecker;
         $this->logger = $logger;
-        $this->l10n = $l10n;
     }
 
     public function initialize(Server $server) {
@@ -103,11 +95,65 @@ class ProtectionPlugin extends ServerPlugin {
     }
 
     public function beforeMethod($request, $response) {
-        // NOTE: This handler is registered too late in the Sabre event lifecycle
-        // (SabrePluginAuthInitEvent fires during emit('beforeMethod'), so our listener
-        // is added after the current emit() has already started iterating).
-        // DELETE and MOVE protection is handled in beforeUnbind/beforeMove instead.
-        // COPY protection is handled in beforeCopy.
+        try {
+            $raw = $request->getPath();
+            $path = $this->getInternalPath($raw);
+            $method = $request->getMethod();
+
+            $pathsToCheck = $this->buildPathsToCheck($path);
+            
+            // Intercepta DELETE e MOVE cedo para garantir que o "touch" (ETag update) persiste.
+            // Usamos 403 Forbidden com corpo XML para que o cliente entenda o erro
+            // e, ao ver o novo ETag, force o restauro (Server Wins).
+            if ($method === 'DELETE' || $method === 'MOVE') {
+                foreach ($pathsToCheck as $candidate) {
+                    if ($this->protectionChecker->isProtected($candidate)) {
+                        // 1. Força atualização do ETag para que o cliente detete mudança e restaure a pasta
+                        $this->touchProtectedNode($raw);
+
+                        // 2. Prepara headers e notificação
+                        $info = $this->protectionChecker->getProtectionInfo($candidate);
+                        $reason = 'Protected by server policy';
+                        if (is_array($info) && !empty($info['reason'])) {
+                            $reason = (string)$info['reason'];
+                        }
+                        
+                        $action = ($method === 'DELETE') ? 'delete' : 'move';
+                        $this->setHeaders($action, $reason);
+                        $this->sendProtectionNotification($candidate, $action);
+                        
+                        // 3. Retorna 403 Forbidden com XML válido (SabreDAV standard)
+                        $this->sendErrorResponse(403, "🛡️ FOLDER PROTECTED: $reason");
+                        return false;
+                    }
+                }
+            }
+
+            if ($method === 'COPY') {
+                foreach ($pathsToCheck as $candidate) {
+                    if ($this->protectionChecker->isProtected($candidate) ||
+                        $this->protectionChecker->isAnyProtectedWithBasename(basename($candidate))) {
+                            $info = $this->protectionChecker->getProtectionInfo($candidate);
+                            $reason = 'Protected by server policy'; // Default reason
+                            if (is_array($info) && !empty($info['reason'])) {
+                                $reason = (string)$info['reason'];
+                            }
+                            $this->logger->warning("FolderProtection DAV: Blocking COPY on protected path: $candidate");
+                            $this->setHeaders('copy', $reason);
+                            $this->sendProtectionNotification($candidate, 'copy');
+                            throw new FolderLocked('Cannot copy protected folders.');
+                    }
+                }
+            }
+
+        } catch (\Throwable $e) {
+            // Se for a nossa exceção, deixa passar
+            if ($e instanceof FolderLocked) throw $e;
+            
+            // Se for outro erro, loga e lança 423 genérico para não crashar com 500
+            $this->logger->error("FolderProtection DAV: Error in beforeMethod: " . $e->getMessage());
+            throw new FolderLocked('Internal server error during protection check.');
+        }
     }
 
     private function sendErrorResponse(int $code, string $message): void {
@@ -117,7 +163,7 @@ class ProtectionPlugin extends ServerPlugin {
         // Formato de erro padrão do SabreDAV/Nextcloud
         $xml = '<?xml version="1.0" encoding="utf-8"?>' . "\n";
         $xml .= '<d:error xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns">' . "\n";
-        $xml .= '  <s:exception>OCA\FolderProtection\DAV\FolderProtected</s:exception>' . "\n";
+        $xml .= '  <s:exception>Sabre\DAV\Exception\Forbidden</s:exception>' . "\n";
         $xml .= '  <s:message>' . htmlspecialchars($message, ENT_XML1, 'UTF-8') . '</s:message>' . "\n";
         $xml .= '</d:error>';
 
@@ -125,34 +171,15 @@ class ProtectionPlugin extends ServerPlugin {
     }
 
     private function getInternalPath($uri) {
-        // Try to get the node to detect group folders (which need special path translation).
-        // For regular nodes, $uri is already in the correct 'files/username/path' format.
+        // Try to get the path from the SabreDAV tree first
         try {
             $node = $this->server->tree->getNodeForPath($uri);
             if ($node instanceof Node) {
-                // Check if this node is backed by a group folder storage.
-                // Group folders appear in the user's DAV namespace (e.g. /files/ncadmin/Projetos)
-                // but are protected via /__groupfolders/N paths.
-                if (method_exists($node, 'getFileInfo')) {
-                    $fileInfo = $node->getFileInfo();
-                    $folderId = $this->getGroupFolderIdFromStorage($fileInfo->getStorage());
-                    if ($folderId !== null) {
-                        $subPath = $fileInfo->getInternalPath(); // path within the group folder
-                        $groupPath = '__groupfolders/' . $folderId;
-                        if (!empty($subPath) && $subPath !== '.') {
-                            $groupPath .= '/' . ltrim($subPath, '/');
-                        }
-                        return $groupPath;
-                    }
-                }
-
-                // Not a group folder: $uri is already 'files/username/path' — use it directly.
-                // (node->getPath() returns a path without the username, so we cannot use it.)
-                if (strpos($uri, 'files/') === 0 || strpos($uri, '__groupfolders/') === 0) {
-                    return $uri;
-                }
                 $internalPath = $node->getPath();
-                return ltrim($internalPath, '/');
+                if (strpos($internalPath, '/__groupfolders/') !== 0) { 
+                    return 'files' . $internalPath; 
+                }
+                return ltrim($internalPath, '/'); 
             }
         } catch (\Exception $e) {
             $this->logger->debug("FolderProtection DAV: getNodeForPath failed for '$uri': " . $e->getMessage());
@@ -160,10 +187,10 @@ class ProtectionPlugin extends ServerPlugin {
 
         if (preg_match('#^/remote\.php/(?:web)?dav/files/([^/]+)(/.*)?$#', $uri, $matches)) {
             $username = $matches[1];
-            $filePath = $matches[2] ?? '';
+            $filePath = $matches[2] ?? ''; 
             return 'files/' . $username . $filePath;
         }
-
+        
         if (preg_match('#^/remote\.php/(?:web)?dav/__groupfolders/(\d+)(/.*)?$#', $uri, $matches)) {
             $folderId = $matches[1];
             $filePath = $matches[2] ?? '';
@@ -175,23 +202,6 @@ class ProtectionPlugin extends ServerPlugin {
         }
 
         return $uri;
-    }
-
-    /**
-     * Traverse the storage wrapper chain to find a GroupFolder storage with getFolderId().
-     * Returns the folder ID or null if not a group folder.
-     */
-    private function getGroupFolderIdFromStorage($storage): ?int {
-        $curr = $storage;
-        $depth = 0;
-        while ($curr !== null && $depth < 10) {
-            if (method_exists($curr, 'getFolderId')) {
-                return (int)$curr->getFolderId();
-            }
-            $curr = method_exists($curr, 'getWrapperStorage') ? $curr->getWrapperStorage() : null;
-            $depth++;
-        }
-        return null;
     }
 
     private function buildPathsToCheck(string $path): array {
@@ -210,116 +220,26 @@ class ProtectionPlugin extends ServerPlugin {
 
             foreach ($this->buildPathsToCheck($path) as $candidate) {
                 if ($this->protectionChecker->isAnyProtectedWithBasename(basename($candidate))) {
-                    $folderName = basename($uri);
                     $this->logger->warning("FolderProtection DAV: Blocking bind in protected path: $candidate");
-                    // Must throw an exception — returning false from beforeBind causes Sabre to
-                    // still send 201, which confuses the desktop client into infinite retry loops.
-                    // Sabre\DAV\Exception\Forbidden returns 403 with our message in <s:message>,
-                    // which the desktop client displays in the "Not Synced" activity panel.
-                    $this->touchAncestors($uri);
-                    $this->setHeaders('create', $this->l10n->t("The folder '%s' is protected", [$folderName]));
+                    $this->setHeaders('create', 'Cannot create items in protected folders');
                     $this->sendProtectionNotification($candidate, 'create');
-                    throw new FolderProtected($this->l10n->t("The folder '%s' is protected and cannot be created here.", [$folderName]));
+                    throw new FolderLocked('Cannot create items in protected folders');
                 }
             }
         } catch (\Throwable $e) {
-            if ($e instanceof \Sabre\DAV\Exception) throw $e;
+            if ($e instanceof FolderLocked) throw $e;
             $this->logger->error("FolderProtection DAV: Error in beforeBind: " . $e->getMessage());
-            throw new FolderProtected($this->l10n->t('Protection check failed'));
+            throw new FolderLocked('Internal server error during protection check.');
         }
     }
 
     public function beforeUnbind($uri) {
-        try {
-            $path = $this->getInternalPath($uri);
-            $pathsToCheck = $this->buildPathsToCheck($path);
-
-            foreach ($pathsToCheck as $candidate) {
-                if ($this->protectionChecker->isProtected($candidate)) {
-                    // Update ETag so the sync client detects the change and restores the folder
-                    $this->touchProtectedNode($uri);
-
-                    $info = $this->protectionChecker->getProtectionInfo($candidate);
-                    $reason = $this->l10n->t('Protected by server policy');
-                    if (is_array($info) && !empty($info['reason'])) {
-                        $reason = (string)$info['reason'];
-                    }
-
-                    $folderName = basename($uri); // usar nome visível (não o path interno que pode ser '__groupfolders/N')
-                    $msg = $this->l10n->t("The folder '%s' is protected: %s", [$folderName, $reason]);
-                    $this->setHeaders('delete', $msg);
-                    $this->sendProtectionNotification($candidate, 'delete');
-                    $this->sendErrorResponse(403, $msg);
-                    return false;
-                }
-            }
-        } catch (\Throwable $e) {
-            $this->logger->error("FolderProtection DAV: Error in beforeUnbind: " . $e->getMessage());
-            $this->sendErrorResponse(403, $this->l10n->t('Protection check failed'));
-            return false;
-        }
+        // DELETE verification is handled in beforeMethod to avoid ETag update rollback.
+        // StorageWrapper still protects non-DAV internal deletes.
     }
 
     public function beforeMove($sourcePath, $destinationPath) {
-        try {
-            $src = $this->getInternalPath($sourcePath);
-            $pathsToCheck = $this->buildPathsToCheck($src);
-
-            // Block if SOURCE is a protected folder
-            foreach ($pathsToCheck as $candidate) {
-                if ($this->protectionChecker->isProtected($candidate)) {
-                    $this->touchProtectedNode($sourcePath);
-
-                    $info = $this->protectionChecker->getProtectionInfo($candidate);
-                    $reason = $this->l10n->t('Protected by server policy');
-                    if (is_array($info) && !empty($info['reason'])) {
-                        $reason = (string)$info['reason'];
-                    }
-
-                    $folderName = basename($sourcePath); // usar nome visível (não o path interno que pode ser '__groupfolders/N')
-                    $msg = $this->l10n->t("The folder '%s' is protected: %s", [$folderName, $reason]);
-                    $this->setHeaders('move', $msg);
-                    $this->sendProtectionNotification($candidate, 'move');
-                    $this->sendErrorResponse(403, $msg);
-                    return false;
-                }
-            }
-
-            // Block if DESTINATION has a protected name (prevents "create temp folder + rename" bypass).
-            // When the client creates an empty stepping-stone folder and then renames it to a protected
-            // name, we block the rename here and also delete the now-orphaned source folder.
-            $dst = $this->getInternalPath($destinationPath);
-            foreach ($this->buildPathsToCheck($dst) as $destCandidate) {
-                if ($this->protectionChecker->isAnyProtectedWithBasename(basename($destCandidate))) {
-                    $destName = basename($destinationPath);
-                    $this->logger->warning("FolderProtection DAV: Blocking rename to protected name: $destCandidate (src: $src)");
-                    // Delete the empty stepping-stone folder from the server so it does not become orphaned.
-                    $this->deleteEmptyNode($sourcePath);
-                    $this->setHeaders('move', $this->l10n->t("Cannot rename to '%s': folder name is protected", [$destName]));
-                    throw new FolderProtected($this->l10n->t("Cannot rename to '%s': this folder name is protected.", [$destName]));
-                }
-            }
-        } catch (\Throwable $e) {
-            if ($e instanceof \Sabre\DAV\Exception) throw $e;
-            $this->logger->error("FolderProtection DAV: Error in beforeMove: " . $e->getMessage());
-            throw new FolderProtected($this->l10n->t('Protection check failed'));
-        }
-    }
-
-    /**
-     * Delete a node if it exists and is an empty collection.
-     * Used to clean up stepping-stone folders created by the client before a blocked rename.
-     */
-    private function deleteEmptyNode(string $uri): void {
-        try {
-            $node = $this->server->tree->getNodeForPath($uri);
-            if ($node instanceof \Sabre\DAV\ICollection && empty($node->getChildren())) {
-                $node->delete();
-                $this->logger->info("FolderProtection DAV: Deleted empty stepping-stone folder: $uri");
-            }
-        } catch (\Exception $e) {
-            $this->logger->debug("FolderProtection DAV: Could not delete stepping-stone '$uri': " . $e->getMessage());
-        }
+        // MOVE verification is handled in beforeMethod to avoid transaction rollback.
     }
 
     public function beforeCopy($sourcePath, $destinationPath) {
@@ -339,13 +259,13 @@ class ProtectionPlugin extends ServerPlugin {
                     $this->logger->warning("FolderProtection DAV: Blocking copy - source is protected: $checkSrc");
                     $this->setHeaders('copy', $reason);
                     $this->sendProtectionNotification($checkSrc, 'copy');
-                    throw new FolderLocked($this->l10n->t("Cannot copy protected folder: %s", [basename($src)]));
+                    throw new FolderLocked('Cannot copy protected folder: ' . basename($src));
                 }
             }
         } catch (\Throwable $e) {
             if ($e instanceof FolderLocked) throw $e;
             $this->logger->error("FolderProtection DAV: Error in beforeCopy: " . $e->getMessage());
-            throw new FolderLocked($this->l10n->t('Internal server error during protection check.'));
+            throw new FolderLocked('Internal server error during protection check.');
         }
     }
 
@@ -362,13 +282,13 @@ class ProtectionPlugin extends ServerPlugin {
                     $this->logger->warning("FolderProtection DAV: Blocking property update on protected path: $checkPath");
                     $this->setHeaders('prop_patch', $reason);
                     $this->sendProtectionNotification($checkPath, 'prop_patch');
-                    throw new FolderLocked($this->l10n->t('Cannot update properties of protected folder'));
+                    throw new FolderLocked('Cannot update properties of protected folder');
                 }
             }
         } catch (\Throwable $e) {
             if ($e instanceof FolderLocked) throw $e;
             $this->logger->error("FolderProtection DAV: Error in propPatch: " . $e->getMessage());
-            throw new FolderLocked($this->l10n->t('Internal server error during protection check.'));
+            throw new FolderLocked('Internal server error during protection check.');
         }
     }
 
@@ -386,14 +306,14 @@ class ProtectionPlugin extends ServerPlugin {
                         $this->logger->warning("FolderProtection DAV: Blocking exclusive lock on protected path: $checkPath");
                         $this->setHeaders('lock', $reason);
                         $this->sendProtectionNotification($checkPath, 'lock');
-                        throw new FolderLocked($this->l10n->t('Cannot lock items in protected folders'));
+                        throw new FolderLocked('Cannot lock items in protected folders');
                     }
                 }
             }
         } catch (\Throwable $e) {
             if ($e instanceof FolderLocked) throw $e;
             $this->logger->error("FolderProtection DAV: Error in beforeLock: " . $e->getMessage());
-            throw new FolderLocked($this->l10n->t('Internal server error during protection check.'));
+            throw new FolderLocked('Internal server error during protection check.');
         }
     }
 
@@ -424,23 +344,6 @@ class ProtectionPlugin extends ServerPlugin {
             }
         } catch (\Throwable $e) {
             $this->logger->warning("FolderProtection DAV: Failed to touch node '$uri': " . $e->getMessage());
-        }
-    }
-
-    /**
-     * Touch every ancestor of $uri (up to but not including the DAV root) so that
-     * ETag changes propagate all the way up the tree. The desktop client polls the
-     * user-root ETag first; without this propagation it never re-lists child folders.
-     */
-    private function touchAncestors(string $uri): void {
-        $current = dirname($uri);
-        $depth = 0;
-        while ($current && $current !== '.' && $current !== '' && $depth < 6) {
-            $this->touchProtectedNode($current);
-            $parent = dirname($current);
-            if ($parent === $current) break;
-            $current = $parent;
-            $depth++;
         }
     }
 
