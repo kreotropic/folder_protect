@@ -1,6 +1,7 @@
 <?php
 script('folder_protection', 'admin');
 style('folder_protection', 'admin');
+translation('folder_protection');
 ?>
 
 <div id="folder-protection-admin" class="section">

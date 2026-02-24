@@ -62,6 +62,15 @@ If the [Group Folders](https://github.com/nextcloud/groupfolders) app is install
 
 - **The "Copy" button is hidden in bulk selection whenever a protected folder is included in the selection.** Even if other non-protected folders are also selected, the Copy action will be hidden for the entire selection. This is a UI-level limitation: because copying a protected folder is blocked at the server level anyway, the button is hidden to avoid confusing error messages. To copy non-protected folders, deselect any protected folders first.
 
+## Translations
+
+The app interface is available in:
+
+- **English** (default)
+- **Portuguese (Portugal)** / Português (Portugal)
+
+Contributions for additional languages are welcome — add a `l10n/<locale>.json` and the corresponding `l10n/<locale>.js` file.
+
 ## Requirements
 
 - Nextcloud 28 or later
