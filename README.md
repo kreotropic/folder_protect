@@ -62,6 +62,8 @@ If the [Group Folders](https://github.com/nextcloud/groupfolders) app is install
 
 - **The "Copy" button is hidden in bulk selection whenever a protected folder is included in the selection.** Even if other non-protected folders are also selected, the Copy action will be hidden for the entire selection. This is a UI-level limitation: because copying a protected folder is blocked at the server level anyway, the button is hidden to avoid confusing error messages. To copy non-protected folders, deselect any protected folders first.
 
+- **Move, copy, and cut-and-paste via the desktop sync client require manual cleanup.** When a user drags a protected folder to a new location, or uses copy/cut-and-paste in Windows Explorer or Finder, the desktop client creates a local copy at the destination before the server rejects the operation. The sync client will then report a conflict and prompt the user to remove the unwanted copy manually. The only operation that is reverted automatically is **deletion** — the server forces the desktop client to restore the deleted folder without user intervention.
+
 ## Translations
 
 The app interface is available in:
