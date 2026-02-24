@@ -14,7 +14,7 @@ When users move 300GB+ folders, Nextcloud servers can crash or become unresponsi
 - OCC commands for CLI management
 - Web admin interface with Group Folder support
 - Track who protected folders and why
-- Desktop client aware: removes delete permission from `oc:permissions` so sync clients do not attempt deletion
+- Desktop client aware: sync clients receive a 403 error with a descriptive message when attempting to delete or move a protected folder, which is shown in the "Not Synced" activity panel
 
 ## Installation
 
@@ -25,7 +25,7 @@ When users move 300GB+ folders, Nextcloud servers can crash or become unresponsi
 
 ### Manual Installation
 ```bash
-cd /path/to/nextcloud/custom_apps
+cd /path/to/nextcloud/apps
 git clone https://github.com/kreotropic/folder_protection.git folder_protection
 cd folder_protection
 npm install
