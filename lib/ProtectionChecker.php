@@ -285,7 +285,22 @@ class ProtectionChecker {
     }
 
     /**
-     * Limpa toda a cache da aplicação (incluindo rate limiting de notificações)
+     * Limpa as entradas de cache relacionadas com um path específico.
+     * Chamado após protect/unprotect para invalidar apenas o necessário,
+     * sem afetar entradas de outros paths ou rate limiting de notificações.
+     */
+    public function clearCacheForPath(string $path): void {
+        $path = $this->normalizePath($path);
+        $this->cache->remove('protected_' . md5($path));
+        $this->cache->remove('folder_protection_info_' . md5($path));
+        // A lista global e os mount points também precisam de ser invalidados
+        $this->cache->remove('all_protected_folders');
+        $this->cache->remove('protected_gf_mountpoints');
+    }
+
+    /**
+     * Limpa toda a cache da aplicação (incluindo rate limiting de notificações).
+     * Usar apenas quando necessário (ex: comando occ cache:clear).
      */
     public function clearCache(): void {
         $this->cache->clear();

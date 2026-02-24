@@ -93,6 +93,10 @@ class StorageWrapper extends Wrapper {
     }
 
     public function unlink(string $path): bool {
+        if ($this->protectionChecker->isProtected($path)) {
+            $this->sendProtectionNotification($path, 'delete');
+            throw new FolderLocked('This folder is protected and cannot be deleted.');
+        }
         return $this->storage->unlink($path);
     }
 
@@ -131,6 +135,10 @@ class StorageWrapper extends Wrapper {
     }
 
     public function rmdir(string $path): bool {
+        if ($this->protectionChecker->isProtected($path)) {
+            $this->sendProtectionNotification($path, 'delete');
+            throw new FolderLocked('This folder is protected and cannot be removed.');
+        }
         return $this->storage->rmdir($path);
     }
 

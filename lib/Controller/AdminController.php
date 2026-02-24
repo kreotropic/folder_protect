@@ -129,7 +129,7 @@ class AdminController extends Controller {
                ]);
             $qb->executeStatement();
 
-            $this->clearCacheInternal();
+            $this->protectionChecker->clearCacheForPath($path);
             $this->logger->info('Protected folder', ['path' => $path, 'user' => $userId]);
 
             return new JSONResponse([
@@ -153,6 +153,15 @@ class AdminController extends Controller {
     #[NoCSRFRequired]
     public function unprotect(int $id): JSONResponse {
         try {
+            // Busca o path antes de apagar para poder invalidar a cache específica
+            $qbSelect = $this->db->getQueryBuilder();
+            $qbSelect->select('path')
+                     ->from('folder_protection')
+                     ->where($qbSelect->expr()->eq('id', $qbSelect->createNamedParameter($id)));
+            $selectResult = $qbSelect->executeQuery();
+            $row = method_exists($selectResult, 'fetchAssociative') ? $selectResult->fetchAssociative() : $selectResult->fetch();
+            $selectResult->closeCursor();
+
             $qb = $this->db->getQueryBuilder();
             $qb->delete('folder_protection')
                ->where($qb->expr()->eq('id', $qb->createNamedParameter($id)));
@@ -166,7 +175,12 @@ class AdminController extends Controller {
                 ], 404);
             }
 
-            $this->clearCacheInternal();
+            if ($row && isset($row['path'])) {
+                $this->protectionChecker->clearCacheForPath($row['path']);
+            } else {
+                // Fallback: limpa tudo se não encontrou o path
+                $this->protectionChecker->clearCache();
+            }
             $this->logger->info('Unprotected folder', ['id' => $id]);
 
             return new JSONResponse([
@@ -300,8 +314,7 @@ class AdminController extends Controller {
     }
 
     private function clearCacheInternal(): void {
-        $cache = $this->cacheFactory->createDistributed('folder_protection');
-        $cache->clear();
+        $this->protectionChecker->clearCache();
     }
 
     /**

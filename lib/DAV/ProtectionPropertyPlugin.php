@@ -161,7 +161,7 @@ class ProtectionPropertyPlugin extends ServerPlugin {
     private function getGroupFolderIdFromStorage($storage): ?int {
         $curr = $storage;
         $depth = 0;
-        while ($curr !== null && $depth < 10) {
+        while ($curr !== null && $depth < 20) {
             if (method_exists($curr, 'getFolderId')) {
                 return (int)$curr->getFolderId();
             }
