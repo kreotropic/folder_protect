@@ -9,10 +9,26 @@ use Psr\Log\LoggerInterface;
 class StorageWrapper extends Wrapper {
 
     private $protectionChecker;
+    /** @var string|null Mount point do storage (ex: '/ncadmin/') — usado para reconstruir o path DAV */
+    private ?string $mountPoint;
 
     public function __construct($parameters) {
         parent::__construct($parameters);
         $this->protectionChecker = $parameters['protectionChecker'];
+        $this->mountPoint = $parameters['mountPoint'] ?? null;
+    }
+
+    /**
+     * Devolve o path no formato usado na base de dados.
+     *
+     * O internal path do storage já está no formato correcto:
+     *   'files/normal' → normalizado pelo ProtectionChecker para '/files/normal'
+     *
+     * NÃO adicionamos o userId aqui porque os paths na DB não incluem o username.
+     * O mountPoint é mantido apenas para contexto (pode ser usado no futuro).
+     */
+    private function buildCheckPath(string $internalPath): string {
+        return $internalPath;
     }
 
     private function sendProtectionNotification(string $path, string $action): void {
@@ -59,21 +75,21 @@ class StorageWrapper extends Wrapper {
     }
 
     public function isDeletable($path): bool {
-        if ($this->protectionChecker->isProtected($path)) {
+        if ($this->protectionChecker->isProtected($this->buildCheckPath($path))) {
             return false;
         }
         return $this->storage->isDeletable($path);
     }
 
     public function isUpdatable($path): bool {
-        if ($this->protectionChecker->isProtected($path)) {
+        if ($this->protectionChecker->isProtected($this->buildCheckPath($path))) {
             return false;
         }
         return $this->storage->isUpdatable($path);
     }
 
     public function copy($source, $target): bool {
-        if ($this->protectionChecker->isProtected($source)) {
+        if ($this->protectionChecker->isProtected($this->buildCheckPath($source))) {
             $this->sendProtectionNotification($source, 'copy');
             throw new FolderLocked('This folder is protected and cannot be copied.', false);
         }
@@ -84,7 +100,7 @@ class StorageWrapper extends Wrapper {
     }
 
     public function rename(string $source, string $target): bool {
-        if ($this->protectionChecker->isProtected($source)) {
+        if ($this->protectionChecker->isProtected($this->buildCheckPath($source))) {
             \OC::$server->get(LoggerInterface::class)->warning("FolderProtection: blocked rename/move of protected folder: $source");
             $this->sendProtectionNotification($source, 'move');
             throw new FolderLocked("Moving protected folders is not allowed");
@@ -93,7 +109,7 @@ class StorageWrapper extends Wrapper {
     }
 
     public function unlink(string $path): bool {
-        if ($this->protectionChecker->isProtected($path)) {
+        if ($this->protectionChecker->isProtected($this->buildCheckPath($path))) {
             $this->sendProtectionNotification($path, 'delete');
             throw new FolderLocked('This folder is protected and cannot be deleted.');
         }
@@ -135,7 +151,7 @@ class StorageWrapper extends Wrapper {
     }
 
     public function rmdir(string $path): bool {
-        if ($this->protectionChecker->isProtected($path)) {
+        if ($this->protectionChecker->isProtected($this->buildCheckPath($path))) {
             $this->sendProtectionNotification($path, 'delete');
             throw new FolderLocked('This folder is protected and cannot be removed.');
         }
@@ -143,7 +159,7 @@ class StorageWrapper extends Wrapper {
     }
 
     public function getPermissions($path): int {
-        if ($this->protectionChecker->isProtected($path)) {
+        if ($this->protectionChecker->isProtected($this->buildCheckPath($path))) {
             return \OCP\Constants::PERMISSION_READ | \OCP\Constants::PERMISSION_SHARE;
         }
         return $this->storage->getPermissions($path);
@@ -154,7 +170,7 @@ class StorageWrapper extends Wrapper {
     }
 
     public function mkdir(string $path): bool {
-        if ($this->protectionChecker->isProtected($path)) {
+        if ($this->protectionChecker->isProtected($this->buildCheckPath($path))) {
             $this->sendProtectionNotification($path, 'create');
             throw new FolderLocked('Cannot create directory: target is protected or inside a protected folder.', false);
         }

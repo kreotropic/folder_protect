@@ -95,19 +95,31 @@ class ProtectionPropertyPlugin extends ServerPlugin {
             return $isProtected ? 'false' : 'true';
         });
 
-        // 4. NÃO manipulamos oc:permissions para pastas protegidas.
+        // 4. Remover 'D' (delete) de oc:permissions para pastas protegidas.
         //
-        // Raciocínio: remover 'D' (delete) das permissões faz com que o cliente desktop SAIBA
-        // que não pode apagar/mover e reverta silenciosamente — sem fazer pedido ao servidor,
-        // sem entrada de erro no painel de actividade.
+        // Raciocínio: sem 'D', o cliente desktop sabe que não pode apagar/mover a pasta
+        // e não tenta fazê-lo. Desta forma a pasta nunca desaparece localmente.
         //
-        // Com D presente, o cliente tenta MOVE/DELETE → o servidor bloqueia com 403 e a mensagem
-        // "The folder 'X' is protected" → o cliente mostra a entrada de erro com o nome da pasta
-        // no painel "Not Synced". A pasta pode desaparecer localmente por ~30 s até o ETag forçar
-        // a restauração (aceite como trade-off para ter feedback visível ao utilizador).
+        // Comportamento equivalente ao das group folders: o ACLStorageWrapper do app groupfolders
+        // remove o bit DELETE de getPermissions() quando ACL o proíbe, e o cliente desktop trata
+        // a pasta como não-eliminável — nunca envia DELETE, nunca marca como "sync error",
+        // a pasta mantém-se visível.
         //
-        // A protecção real (bloquear DELETE/MOVE/COPY) é garantida pelo ProtectionPlugin em
-        // beforeUnbind/beforeMove/beforeBind — não depende das oc:permissions.
+        // Sem esta remoção, o cliente vê 'D', tenta DELETE → recebe 403 do ProtectionPlugin →
+        // marca o item como "sync error" permanente → pasta desaparece localmente e não volta.
+        //
+        // A protecção real (bloquear DELETE/MOVE/COPY mesmo que o cliente tente) continua
+        // garantida pelo ProtectionPlugin em beforeUnbind/beforeMove/beforeBind.
+        if ($isProtected) {
+            // PropFind::get() force-avalia o lazy callback registado pelo FilesPlugin (prioridade 100)
+            // e devolve a string de permissões actual (ex: "RGDNVCK").
+            // PropFind::set() substitui o valor para todos os clientes que peçam esta propriedade.
+            $currentPerms = $propFind->get(self::PROP_OC_PERMISSIONS);
+            if (is_string($currentPerms) && $currentPerms !== '') {
+                $propFind->set(self::PROP_OC_PERMISSIONS, str_replace('D', '', $currentPerms));
+                $this->logger->debug("FolderProtection PROPFIND: stripped 'D' from oc:permissions for '$path' (was: '$currentPerms')");
+            }
+        }
     }
 
     /**
@@ -133,13 +145,9 @@ class ProtectionPropertyPlugin extends ServerPlugin {
                     return $groupPath;
                 }
 
-                // Regular file/folder: $uri from PropFind is already 'files/username/path'.
-                // (getInternalPath() omits the username, so we cannot use it directly.)
-                if (!empty($uri) && (strpos($uri, 'files/') === 0 || strpos($uri, '__groupfolders/') === 0)) {
-                    return '/' . $uri;
-                }
-
-                // Fallback (should rarely be reached)
+                // Pasta normal: usar o internal path do storage (ex: 'files/normal')
+                // que corresponde ao formato guardado na DB (normalizado para '/files/normal').
+                // NÃO usar o URI DAV (ex: 'files/ncadmin/normal') que inclui o username.
                 $path = $fileInfo->getInternalPath();
                 if (strpos($path, 'files/') !== 0) {
                     $path = 'files/' . ltrim($path, '/');

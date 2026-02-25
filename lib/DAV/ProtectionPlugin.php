@@ -129,6 +129,8 @@ class ProtectionPlugin extends ServerPlugin {
             if ($node instanceof Node) {
                 if (method_exists($node, 'getFileInfo')) {
                     $fileInfo = $node->getFileInfo();
+
+                    // Group folder: traversar a cadeia de wrappers para obter o folderId
                     $folderId = $this->getGroupFolderIdFromStorage($fileInfo->getStorage());
                     if ($folderId !== null) {
                         $subPath = $fileInfo->getInternalPath();
@@ -138,34 +140,29 @@ class ProtectionPlugin extends ServerPlugin {
                         }
                         return $groupPath;
                     }
-                }
 
-                if (strpos($uri, 'files/') === 0 || strpos($uri, '__groupfolders/') === 0) {
-                    return $uri;
+                    // Pasta normal: usar o internal path do storage (ex: 'files/normal')
+                    // que corresponde ao formato guardado na DB (normalizado para '/files/normal').
+                    // NÃO usar o URI DAV (ex: 'files/ncadmin/normal') que inclui o username.
+                    $internalPath = $fileInfo->getInternalPath();
+                    if (strpos($internalPath, 'files/') !== 0) {
+                        $internalPath = 'files/' . ltrim($internalPath, '/');
+                    }
+                    return $internalPath;
                 }
-                $internalPath = $node->getPath();
-                return ltrim($internalPath, '/');
             }
         } catch (\Exception $e) {
             $this->logger->debug("FolderProtection DAV: getNodeForPath failed for '$uri': " . $e->getMessage());
         }
 
-        if (preg_match('#^/remote\.php/(?:web)?dav/files/([^/]+)(/.*)?$#', $uri, $matches)) {
-            $username = $matches[1];
-            $filePath = $matches[2] ?? '';
-            return 'files/' . $username . $filePath;
-        }
-
+        // Fallback para group folders via URL
         if (preg_match('#^/remote\.php/(?:web)?dav/__groupfolders/(\d+)(/.*)?$#', $uri, $matches)) {
             $folderId = $matches[1];
             $filePath = $matches[2] ?? '';
             return '__groupfolders/' . $folderId . $filePath;
         }
 
-        if (strpos($uri, 'files/') === 0 || strpos($uri, '__groupfolders/') === 0) {
-            return $uri;
-        }
-
+        // Fallback genérico (não deve chegar aqui em condições normais)
         return $uri;
     }
 
