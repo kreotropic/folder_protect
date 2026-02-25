@@ -228,6 +228,7 @@ class Application extends App implements IBootstrap {
             return new StorageWrapper([
                 'storage' => $storage,
                 'protectionChecker' => $protectionChecker,
+                'mountPoint' => $mountPoint,
             ]);
         } catch (\Throwable $e) {
             // Logar e falhar com segurança retornando o storage original
