@@ -267,7 +267,7 @@ class AdminController extends Controller {
             }
             $result->closeCursor();
 
-            // Fetch which group folder paths are already protected
+            // Fetch group folders protected via proper path (/__groupfolders/{id})
             $qb2 = $this->db->getQueryBuilder();
             $qb2->select('id', 'path', 'reason', 'created_by')
                 ->from('folder_protection')
@@ -285,17 +285,39 @@ class AdminController extends Controller {
             }
             $result2->closeCursor();
 
+            // Detect group folders "protected" via /files/{mountPoint} (custom path — incomplete protection)
+            // These block basename creation but do NOT protect the actual group folder from DAV operations.
+            $qb3 = $this->db->getQueryBuilder();
+            $qb3->select('id', 'path', 'reason', 'created_by')
+                ->from('folder_protection')
+                ->where($qb3->expr()->like('path', $qb3->createNamedParameter('/files/%')));
+            $result3 = $qb3->executeQuery();
+            $customPathByName = [];
+            while ($row = $result3->fetch()) {
+                $basename = basename($row['path']);
+                $customPathByName[$basename] = [
+                    'protection_id' => (int)$row['id'],
+                    'reason'        => $row['reason'],
+                    'created_by'    => $row['created_by'],
+                    'path'          => $row['path'],
+                ];
+            }
+            $result3->closeCursor();
+
             $folders = [];
             foreach ($groupFolders as $id => $mountPoint) {
-                $isProtected = isset($protected[$id]);
+                $isProtected        = isset($protected[$id]);
+                $isPartial          = !$isProtected && isset($customPathByName[$mountPoint]);
+                $data               = $isProtected ? $protected[$id] : ($isPartial ? $customPathByName[$mountPoint] : null);
                 $folders[] = [
-                    'id'           => $id,
-                    'mountPoint'   => $mountPoint,
-                    'path'         => '/__groupfolders/' . $id,
-                    'protected'    => $isProtected,
-                    'protectionId' => $isProtected ? $protected[$id]['protection_id'] : null,
-                    'reason'       => $isProtected ? $protected[$id]['reason'] : null,
-                    'createdBy'    => $isProtected ? $protected[$id]['created_by'] : null,
+                    'id'               => $id,
+                    'mountPoint'       => $mountPoint,
+                    'path'             => '/__groupfolders/' . $id,
+                    'protected'        => $isProtected || $isPartial,
+                    'partialProtection'=> $isPartial,
+                    'protectionId'     => $data ? $data['protection_id'] : null,
+                    'reason'           => $data ? $data['reason'] : null,
+                    'createdBy'        => $data ? $data['created_by'] : null,
                 ];
             }
 

@@ -95,8 +95,12 @@
                                 <div v-if="gf.protected && gf.reason" class="gf-reason">{{ gf.reason }}</div>
                             </div>
                             <div class="gf-actions">
-                                <span v-if="gf.protected" class="badge-protected">
+                                <span v-if="gf.protected && !gf.partialProtection" class="badge-protected">
                                     🔒 {{ t('folder_protection', 'Protected') }}
+                                </span>
+                                <span v-if="gf.partialProtection" class="badge-partial"
+                                      :title="t('folder_protection', 'Protected via custom path ({path}). This only blocks folder name creation but does not fully protect the group folder from deletion or move. Remove and re-add via Group Folders tab.', { path: gf.protectionPath || '/files/' + gf.mountPoint })">
+                                    ⚠️ {{ t('folder_protection', 'Partial') }}
                                 </span>
                                 <button
                                     v-if="gf.protected"
@@ -146,13 +150,22 @@
                             <label for="folder-path">
                                 {{ t('folder_protection', 'Folder Path') }}
                             </label>
-                            <input
-                                id="folder-path"
-                                v-model="newFolder.path"
-                                type="text"
-                                :placeholder="t('folder_protection', '/files/folder_name')"
-                                required
-                            />
+                            <div class="path-input-wrapper">
+                                <span class="path-prefix">/files/</span>
+                                <input
+                                    id="folder-path"
+                                    v-model="newFolder.folderName"
+                                    type="text"
+                                    :placeholder="t('folder_protection', 'folder_name')"
+                                    required
+                                />
+                            </div>
+                            <p class="form-hint">
+                                {{ t('folder_protection', 'Full path will be: /files/{name}', { name: newFolder.folderName || 'folder_name' }) }}
+                            </p>
+                            <p v-if="matchingGroupFolder" class="form-warning">
+                                ⚠️ {{ t('folder_protection', '"{name}" is a Group Folder. Use the Group Folders tab for full protection — this custom path only blocks name creation but does not protect the group folder from deletion or move.', { name: newFolder.folderName }) }}
+                            </p>
                         </div>
                         <div class="form-group">
                             <label for="folder-reason">
@@ -169,7 +182,7 @@
                             <button type="button" @click="closeModal" class="button">
                                 {{ t('folder_protection', 'Cancel') }}
                             </button>
-                            <button type="submit" class="button primary" :disabled="submitting">
+                            <button type="submit" class="button primary" :disabled="submitting || !!matchingGroupFolder">
                                 {{ submitting ? t('folder_protection', 'Adding...') : t('folder_protection', 'Add Protection') }}
                             </button>
                         </div>
@@ -203,7 +216,7 @@ export default {
             showAddModal: false,
             submitting: false,
             error: null,
-            newFolder: { path: '', reason: '' },
+            newFolder: { folderName: '', reason: '' },
 
             // Group folders
             groupFolders: [],
@@ -220,6 +233,14 @@ export default {
 
     mounted() {
         this.loadFolders()
+    },
+
+    computed: {
+        matchingGroupFolder() {
+            if (!this.groupFoldersAvailable || !this.newFolder.folderName) return null
+            const name = this.newFolder.folderName.trim().replace(/^\/+/, '')
+            return this.groupFolders.find(gf => gf.mountPoint === name) || null
+        },
     },
 
     methods: {
@@ -241,7 +262,7 @@ export default {
         async openAddModal() {
             this.showAddModal = true
             this.error = null
-            this.newFolder = { path: '', reason: '' }
+            this.newFolder = { folderName: '', reason: '' }
             this.activeTab = 'groupfolders'  // Resetar para o tab por defeito ao reabrir
             await this.loadGroupFolders()
         },
@@ -337,11 +358,12 @@ export default {
         async addProtection() {
             this.submitting = true
             this.error = null
+            const fullPath = '/files/' + this.newFolder.folderName.replace(/^\/+/, '')
             try {
                 const response = await axios.post(
                     generateUrl('/apps/folder_protection/api/protect'),
                     {
-                        path: this.newFolder.path,
+                        path: fullPath,
                         reason: this.newFolder.reason,
                         userId: OC.getCurrentUser().uid,
                     }
@@ -636,5 +658,54 @@ export default {
     background: var(--color-error);
     color: white;
     border-radius: var(--border-radius);
+}
+
+.path-input-wrapper {
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius);
+    overflow: hidden;
+}
+
+.path-prefix {
+    padding: 10px 8px 10px 10px;
+    background: var(--color-background-hover);
+    color: var(--color-text-maxcontrast);
+    font-family: monospace;
+    font-size: 14px;
+    white-space: nowrap;
+    border-right: 1px solid var(--color-border);
+    user-select: none;
+}
+
+.path-input-wrapper input {
+    border: none;
+    border-radius: 0;
+    flex: 1;
+}
+
+.form-hint {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--color-text-maxcontrast);
+    font-family: monospace;
+}
+
+.form-warning {
+    margin-top: 6px;
+    padding: 8px 10px;
+    font-size: 12px;
+    background: var(--color-warning, #eca700);
+    color: var(--color-main-background);
+    border-radius: var(--border-radius);
+    line-height: 1.4;
+}
+
+.badge-partial {
+    font-size: 12px;
+    color: var(--color-warning, #eca700);
+    white-space: nowrap;
+    cursor: help;
 }
 </style>
