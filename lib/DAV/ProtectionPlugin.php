@@ -195,6 +195,14 @@ class ProtectionPlugin extends ServerPlugin {
 
     public function beforeBind($uri) {
         try {
+            // Skip chunked upload paths — chunk names like "1", "2" etc.
+            // can match protected folder basenames (e.g. GroupFolder IDs).
+            // Chunked uploads assemble in a temporary uploads/ namespace and only
+            // move the final file via MOVE, which is checked in beforeMove instead.
+            if (preg_match('#^/?uploads/#', $uri)) {
+                return;
+            }
+
             $path = $this->getInternalPath($uri);
             $this->logger->debug("FolderProtection DAV: beforeBind checking '$path'");
 
